@@ -3,16 +3,31 @@ import { signSession } from "./_lib/util.js";
 
 export const config = { runtime: "nodejs" };
 
+// Read JSON body for Vercel Node functions
+async function readJson(req) {
+  return await new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (c) => (data += c));
+    req.on("end", () => {
+      try { resolve(JSON.parse(data || "{}")); } catch (e) { reject(e); }
+    });
+    req.on("error", reject);
+  });
+}
+
 function need(name) {
   if (!process.env[name]) throw new Error(`MISSING_ENV:${name}`);
   return process.env[name];
 }
 
 export default async function handler(req, res){
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
   try {
-    const { name, code } = req.body || {};
+    const body = await readJson(req);                  // <-- parse body
+    const { name, code } = body || {};
     if (!name || !code) return res.status(400).json({ error: "Name and code required" });
 
     const PARTY_CODE   = need("PARTY_CODE");
@@ -52,7 +67,7 @@ export default async function handler(req, res){
     return res.status(200).json({ ok: true });
 
   } catch (e) {
-    const msg = String(e.message || "");
+    const msg = String(e?.message || "");
     if (msg.startsWith("MISSING_ENV:")) {
       return res.status(500).json({ error: `Missing environment variable ${msg.split(":")[1]}` });
     }
