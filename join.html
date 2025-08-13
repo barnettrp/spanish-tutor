@@ -1,29 +1,76 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Join — Spanish Tutor</title>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css"></head>
-<body>
-<div class="container">
-<header><div class="logo" aria-hidden="true"></div><div><h1>Join Party</h1>
-<div class="sub">Enter your name and the invite code.</div>
-<div class="nav"><a class="pill" href="index.html">Home</a></div>
-</div></header>
-<div class="card" style="max-width:560px;">
-<label class="small">Your display name</label><input id="name" class="input" placeholder="e.g., Rick" />
-<label class="small" style="margin-top:8px;">Party code</label><input id="code" class="input" placeholder="e.g., RICK-SPANISH-01" />
-<div class="row" style="margin-top:12px;"><button id="join" class="btn">Join</button></div>
-<div id="msg" class="small" style="margin-top:10px;"></div></div></div>
-<footer>© Spanish Tutor — party mode</footer>
-<script>
-document.getElementById("join").addEventListener("click", async ()=>{
-  const name = document.getElementById("name").value.trim();
-  const code = document.getElementById("code").value.trim();
-  const msg = document.getElementById("msg");
-  if(!name || !code){ msg.textContent = "Please enter both your name and the party code."; return; }
-  const r = await fetch("/api/join", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ name, code }) });
-  const data = await r.json().catch(()=>({}));
-  if(!r.ok){ msg.textContent = data.error || "Could not join."; return; }
-  location.href = "conversation.html";
-});
-</script></body></html>
+import { createClient } from "@supabase/supabase-js";
+import { signSession } from "./_lib/util.js";
+
+export const config = { runtime: "nodejs" };
+
+// Read JSON body for Vercel Node functions
+async function readJson(req) {
+  return await new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (c) => (data += c));
+    req.on("end", () => {
+      try { resolve(JSON.parse(data || "{}")); } catch (e) { reject(e); }
+    });
+    req.on("error", reject);
+  });
+}
+
+function need(name) {
+  if (!process.env[name]) throw new Error(`MISSING_ENV:${name}`);
+  return process.env[name];
+}
+
+export default async function handler(req, res){
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  try {
+    const body = await readJson(req);                  // <-- parse body
+    const { name, code } = body || {};
+    if (!name || !code) return res.status(400).json({ error: "Name and code required" });
+
+    const PARTY_CODE   = need("PARTY_CODE");
+    const PARTY_SEATS  = parseInt(process.env.PARTY_SEATS || "5", 10);
+    const JWT_SECRET   = need("PARTY_JWT_SECRET");
+    const SUPABASE_URL = need("SUPABASE_URL");
+    const SUPA_KEY     = need("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (code !== PARTY_CODE) return res.status(401).json({ error: "Invalid code" });
+
+    const supa = createClient(SUPABASE_URL, SUPA_KEY);
+
+    const { data: members, error: mErr } = await supa
+      .from("members").select("id,name").eq("party_code", PARTY_CODE);
+    if (mErr) return res.status(500).json({ error: "Database error (members)" });
+
+    const existing = (members || []).find(
+      m => (m.name || "").toLowerCase() === String(name).toLowerCase()
+    );
+
+    if (existing) {
+      const token = signSession({ member_id: existing.id, name, party_code: PARTY_CODE }, JWT_SECRET);
+      res.setHeader("Set-Cookie", `party_session=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000`);
+      return res.status(200).json({ ok: true });
+    }
+
+    if ((members || []).length >= PARTY_SEATS) {
+      return res.status(403).json({ error: "Party is full" });
+    }
+
+    const { data: ins, error: iErr } = await supa
+      .from("members").insert({ party_code: PARTY_CODE, name }).select().single();
+    if (iErr) return res.status(500).json({ error: "Database error (insert)" });
+
+    const token = signSession({ member_id: ins.id, name, party_code: PARTY_CODE }, JWT_SECRET);
+    res.setHeader("Set-Cookie", `party_session=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=2592000`);
+    return res.status(200).json({ ok: true });
+
+  } catch (e) {
+    const msg = String(e?.message || "");
+    if (msg.startsWith("MISSING_ENV:")) {
+      return res.status(500).json({ error: `Missing environment variable ${msg.split(":")[1]}` });
+    }
+    return res.status(500).json({ error: "Server error" });
+  }
+}
