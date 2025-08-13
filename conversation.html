@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spanish Tutor — Conversation</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1>Spanish Tutor</h1>
+        <div class="sub">Mode: Conversation <span id="whoami" class="badge"></span></div>
+        <div class="nav">
+          <a class="pill active" href="conversation.html">Conversation</a>
+          <a class="pill " href="immersion.html">Immersion</a>
+          <a class="pill " href="voice.html">Voice</a>
+          <a class="pill" href="index.html">Home</a>
+        </div>
+      </div>
+    </header>
+    <div class="grid">
+      <aside class="sidebar card">
+        <div class="section-title">Settings</div>
+        <label class="small" style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="tts" /> Read replies aloud (TTS)</label>
+        <label class="small" style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="boost" /> Smart boost (use GPT-5 for this message)</label>
+        <button id="mic" class="btn secondary">🎤 Speak</button>
+        <p class="hint">You have 100 messages/day. Words are clickable for a quick popup.</p>
+      </aside>
+      <main>
+        <div id="chat" class="card chatbox"></div>
+        <div class="row" style="margin-top:10px;">
+          <input id="inp" class="input" placeholder="Type here (or use the mic)…" />
+          <button id="send" class="btn">Send</button>
+        </div>
+        <div class="row" style="margin-top:12px;">
+          <div class="card" style="flex:1;">
+            <div class="section-title">Corrections</div>
+            <div id="corrections" class="small">(Nothing yet)</div>
+          </div>
+          <div class="card" style="flex:1;">
+            <div class="section-title">Recap</div>
+            <div id="recap" class="small">(Will appear after a reply)</div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <footer>© Spanish Tutor — party mode</footer>
+  <script src="app.js"></script>
+  <script>initChat({ mode: "conversation" });</script>
+</body>
+</html>

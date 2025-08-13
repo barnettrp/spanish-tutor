@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Join — Spanish Tutor</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="container">
+<header><div class="logo" aria-hidden="true"></div><div><h1>Join Party</h1>
+<div class="sub">Enter your name and the invite code.</div>
+<div class="nav"><a class="pill" href="index.html">Home</a></div>
+</div></header>
+<div class="card" style="max-width:560px;">
+<label class="small">Your display name</label><input id="name" class="input" placeholder="e.g., Rick" />
+<label class="small" style="margin-top:8px;">Party code</label><input id="code" class="input" placeholder="e.g., RICK-SPANISH-01" />
+<div class="row" style="margin-top:12px;"><button id="join" class="btn">Join</button></div>
+<div id="msg" class="small" style="margin-top:10px;"></div></div></div>
+<footer>© Spanish Tutor — party mode</footer>
+<script>
+document.getElementById("join").addEventListener("click", async ()=>{
+  const name = document.getElementById("name").value.trim();
+  const code = document.getElementById("code").value.trim();
+  const msg = document.getElementById("msg");
+  if(!name || !code){ msg.textContent = "Please enter both your name and the party code."; return; }
+  const r = await fetch("/api/join", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ name, code }) });
+  const data = await r.json().catch(()=>({}));
+  if(!r.ok){ msg.textContent = data.error || "Could not join."; return; }
+  location.href = "conversation.html";
+});
+</script></body></html>

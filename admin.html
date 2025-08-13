@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Admin — Spanish Tutor</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css"></head>
+<body><div class="container"><header><div class="logo" aria-hidden="true"></div>
+<div><h1>Admin Dashboard</h1><div class="sub">Private usage and cost. Keep this page secret.</div>
+<div class="nav"><a class="pill" href="index.html">Home</a></div></div></header>
+<div class="card" style="max-width:720px;">
+<label class="small">Admin key</label><input id="adminkey" class="input" placeholder="Paste ADMIN_KEY (do not share)" />
+<div class="row" style="margin-top:10px;"><button id="load" class="btn">Load usage</button></div>
+<div id="out" style="margin-top:10px;"></div></div></div>
+<footer>© Spanish Tutor — party mode</footer>
+<script>
+document.getElementById("load").addEventListener("click", async ()=>{
+  const key = document.getElementById("adminkey").value.trim();
+  const out = document.getElementById("out");
+  if(!key){ out.textContent = "Enter your admin key."; return; }
+  const r = await fetch("/api/admin/usage", { headers: { "x-admin-key": key } });
+  const data = await r.json().catch(()=>({error:"Error"}));
+  if(!r.ok){ out.textContent = data.error || "Error"; return; }
+  const { pricing, totals, users } = data;
+  let html = `<div class="small">Pricing — input: $${pricing.input_per_million}/M, output: $${pricing.output_per_million}/M, model: ${pricing.model}</div>`;
+  html += `<h3>Totals</h3><table class="table"><tr><th>Input tokens</th><th>Output tokens</th><th>Cost (USD)</th></tr>` +
+          `<tr><td>${totals.input_tokens}</td><td>${totals.output_tokens}</td><td>$${totals.cost_usd.toFixed(4)}</td></tr></table>`;
+  html += `<h3>By user (past 30 days)</h3><table class="table"><tr><th>Name</th><th>Input</th><th>Output</th><th>Messages</th><th>Cost</th></tr>`;
+  for(const u of users){
+    html += `<tr><td>${u.name}</td><td>${u.input_tokens}</td><td>${u.output_tokens}</td><td>${u.messages}</td><td>$${u.cost_usd.toFixed(4)}</td></tr>`;
+  }
+  html += `</table>`;
+  out.innerHTML = html;
+});
+</script></body></html>
