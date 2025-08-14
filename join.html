@@ -1,39 +1,27 @@
-<script>
-  document.getElementById("join").addEventListener("click", async () => {
-    const name = document.getElementById("name").value.trim();
-    const code = document.getElementById("code").value.trim();
-    const msg  = document.getElementById("msg");
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Join</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }
+      .ok { padding: 1rem; border: 1px solid #ddd; border-radius: 8px; }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <h1>Join page loaded ✅</h1>
 
-    if (!name || !code) {
-      msg.textContent = "Please enter both your name and the party code.";
-      return;
-    }
+    <div id="app" class="ok">
+      If you can see this, HTML rendered and JS hasn’t run yet.
+    </div>
 
-    try {
-      const r = await fetch("/api/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, code })
-      });
-
-      // Try to parse JSON, fall back to plain text
-      let data = null, text = null;
-      try {
-        data = await r.json();
-      } catch {
-        text = await r.text();
-      }
-
-      if (!r.ok) {
-        msg.textContent = (data && data.error) ? data.error
-                        : (text || "Could not join.");
-        return;
-      }
-
-      // If join successful, redirect to the conversation page
-      location.href = "conversation.html";
-    } catch (e) {
-      msg.textContent = "Network error. Try again.";
-    }
-  });
-</script>
+    <script>
+      // Simple sanity check — if this runs, you’ll see the message below.
+      console.log("[join.html] inline script ran");
+      const el = document.getElementById("app");
+      if (el) el.textContent = "JS is running. You are NOT blank-screened.";
+    </script>
+  </body>
+</html>
