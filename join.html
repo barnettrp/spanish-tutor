@@ -1,27 +1,43 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Join</title>
-    <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }
-      .ok { padding: 1rem; border: 1px solid #ddd; border-radius: 8px; }
-      .hidden { display: none; }
-    </style>
-  </head>
-  <body>
-    <h1>Join page loaded ✅</h1>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Join</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }
+    .card { max-width: 520px; padding: 1rem 1.25rem; border: 1px solid #ddd; border-radius: 12px; }
+    .row { display: flex; gap: .5rem; margin-top: .75rem; }
+    input, button { font: inherit; padding: .65rem .75rem; border-radius: 10px; border: 1px solid #ccc; }
+    button { cursor: pointer; }
+    .muted { color: #666; font-size: .9rem; }
+    .error { color: #b00020; margin-top: .5rem; }
+    .ok { color: #0a7a34; margin-top: .5rem; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Join</h1>
 
-    <div id="app" class="ok">
-      If you can see this, HTML rendered and JS hasn’t run yet.
-    </div>
+  <div id="app" class="card">
+    <form id="joinForm">
+      <label>
+        Email<br />
+        <input id="email" type="email" placeholder="you@example.com" required />
+      </label>
+      <div class="row">
+        <input id="code" type="text" placeholder="Invite code (optional)" />
+        <button id="joinBtn" type="submit">Join</button>
+      </div>
+      <div class="muted" id="hint">Tip: you can also pass ?email=&code= in the URL.</div>
+      <div id="status" class="muted" aria-live="polite"></div>
+      <div id="err" class="error hidden"></div>
+      <div id="ok" class="ok hidden"></div>
+    </form>
+  </div>
 
-    <script>
-      // Simple sanity check — if this runs, you’ll see the message below.
-      console.log("[join.html] inline script ran");
-      const el = document.getElementById("app");
-      if (el) el.textContent = "JS is running. You are NOT blank-screened.";
-    </script>
-  </body>
+  <!-- IMPORTANT: use type="module" if your JS uses imports/exports -->
+  <script type="module" src="./join.js"></script>
+</body>
 </html>
