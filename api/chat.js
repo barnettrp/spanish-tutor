@@ -1,101 +1,237 @@
-// api/chat.js — Vercel Node Serverless (NOT Edge)
+// chat.js (ES module) — client-side logic for chat.html
 
-// Small helpers
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-function formatErr(e) { return typeof e === "string" ? e : (e?.message || "Unknown error"); }
+// ---------- Small helpers ----------
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const HISTORY_KEY = "party_history";
+const SYSTEM_PROMPT =
+  "You are a helpful Spanish tutor. Be concise, friendly, and focus on A1–A2 level explanations unless the user asks for more depth.";
 
-function trimHistory(history, maxPairs = 12) {
-  const sys = history.filter(m => m.role === "system");
-  const rest = history.filter(m => m.role !== "system");
+function $(id) { return document.getElementById(id); }
+
+function trimHistory(full, maxPairs = 12) {
+  const sys = full.find(m => m.role === "system") || { role: "system", content: SYSTEM_PROMPT };
+  const rest = full.filter(m => m.role !== "system");
   const kept = rest.slice(-maxPairs * 2);
-  return [...sys.slice(0, 1), ...kept];
+  return [sys, ...kept];
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, error: "Method not allowed" });
+function loadHistory() {
+  try {
+    const arr = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || "[]");
+    // ensure system prompt (index 0)
+    if (!arr.length || arr[0]?.role !== "system") {
+      arr.unshift({ role: "system", content: SYSTEM_PROMPT });
+    }
+    return arr;
+  } catch {
+    return [{ role: "system", content: SYSTEM_PROMPT }];
   }
+}
+
+function saveHistory(h) {
+  sessionStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+}
+
+// ---------- Element refs ----------
+const connStatus = $("connStatus");
+const userBadge  = $("userBadge");
+const chatScroll = $("chatScroll");
+const bootMsg    = $("bootMsg");
+const composer   = $("composer");
+const inputEl    = $("text");
+const leaveBtn   = $("leaveBtn");
+const sendBtn    = $("send");
+
+// ---------- Auth guard (lightweight; mirrors your previous inline script) ----------
+const token = localStorage.getItem("party_token");
+const name  = localStorage.getItem("party_name") || "Guest";
+const code  = localStorage.getItem("party_code") || "";
+userBadge.textContent = `${name}${code ? " · " + code : ""}`;
+
+function redirectToJoin() { location.replace("join.html"); }
+
+if (!token) {
+  redirectToJoin();
+  throw new Error("No party_token present");
+}
+
+// Optional: validate session if /api/me exists (safe if it doesn't)
+(async () => {
+  connStatus.textContent = "validating…";
+  try {
+    const res = await fetch("/api/me", { credentials: "include" });
+    if (res.status === 404) { connStatus.textContent = "connected"; return; }
+    if (!res.ok) { connStatus.textContent = "unauthorized"; redirectToJoin(); return; }
+    connStatus.textContent = "connected";
+  } catch {
+    connStatus.textContent = "offline (still usable)";
+  }
+})();
+
+// ---------- History & render ----------
+let history = loadHistory();
+
+function addMsg(text, who = "you", skipSave = false) {
+  const div = document.createElement("div");
+  div.className = `msg ${who}`;
+  div.textContent = text;
+  chatScroll.appendChild(div);
+  chatScroll.scrollTop = chatScroll.scrollHeight;
+
+  if (!skipSave) {
+    history.push({ role: (who === "me" ? "user" : "assistant"), content: text });
+    saveHistory(history);
+  }
+}
+
+function addError(text) {
+  const div = document.createElement("div");
+  div.className = "msg err";
+  div.textContent = text;
+  chatScroll.appendChild(div);
+  chatScroll.scrollTop = chatScroll.scrollHeight;
+}
+
+// Rehydrate (skip system msg)
+for (const m of history) {
+  if (m.role === "user") addMsg(m.content, "me", true);
+  if (m.role === "assistant") addMsg(m.content, "you", true);
+}
+if (bootMsg) {
+  bootMsg.textContent = `Welcome, ${name}!`;
+  setTimeout(() => bootMsg.remove(), 800);
+}
+
+// ---------- Send flow ----------
+composer.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = (inputEl.value || "").trim();
+  if (!msg) return;
+
+  addMsg(msg, "me");
+  inputEl.value = "";
+  inputEl.focus();
+
+  sendBtn.disabled = true;
+  sendBtn.textContent = "Sending…";
 
   try {
-    // ---- 1) Ensure API key ----
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not set" });
+    // Always include a system prompt + last N pairs (prevents empty-array errors)
+    const messages = trimHistory(history);
+
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages })
+    });
+
+    const text = await r.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
+
+    if (!r.ok || !data?.ok) {
+      const detail = (data && data.error) ? data.error : `HTTP ${r.status}: ${text.slice(0,200)}`;
+      addError(`(error) ${detail}`);
+      return;
     }
 
-    // ---- 2) Parse JSON body safely ----
-    let body = req.body;
-    if (typeof body === "string") {
-      try { body = JSON.parse(body || "{}"); } catch { body = {}; }
-    }
-    if (!body || typeof body !== "object") body = {};
-
-    // Accept either {messages: [...]} or {message: "text"}
-    let incoming = [];
-    if (Array.isArray(body.messages)) {
-      incoming = body.messages;
-    } else if (typeof body.message === "string" && body.message.trim()) {
-      incoming = [
-        { role: "system", content: "You are a helpful Spanish tutor. Be concise." },
-        { role: "user", content: body.message.trim() }
-      ];
-    }
-
-    if (!Array.isArray(incoming) || incoming.length === 0) {
-      return res.status(400).json({ ok: false, error: "No messages provided" });
-    }
-
-    // Optional: trim history to keep payload small
-    const messages = trimHistory(incoming);
-    const totalChars = messages.reduce((n, m) => n + (m?.content?.length || 0), 0);
-    if (totalChars > 20000) {
-      return res.status(400).json({ ok: false, error: "Request too large after trimming" });
-    }
-
-    // ---- 3) Build OpenAI payload ----
-    const payload = {
-      model: "gpt-4o-mini",
-      messages,
-      max_tokens: 500,
-      temperature: 0.4
-    };
-
-    // ---- 4) Call OpenAI with light backoff for 429s ----
-    let attempt = 0;
-    while (true) {
-      const r = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const text = await r.text();
-
-      if (r.ok) {
-        let json;
-        try { json = JSON.parse(text); }
-        catch {
-          return res.status(502).json({ ok: false, error: `OpenAI JSON parse failed: ${text.slice(0, 200)}` });
-        }
-        const reply = json?.choices?.[0]?.message?.content ?? "";
-        return res.status(200).json({ ok: true, reply: String(reply).trim() });
-      }
-
-      const is429 = r.status === 429 || /rate.?limit/i.test(text);
-      if (is429 && attempt < 3) {
-        await sleep(500 * Math.pow(2, attempt)); // 500ms → 1s → 2s
-        attempt++;
-        continue;
-      }
-
-      // Bubble up OpenAI’s error so you can see it in the UI
-      return res.status(r.status).json({ ok: false, error: `OpenAI ${r.status}: ${text.slice(0, 500)}` });
-    }
+    const reply = (data.reply || "").trim();
+    addMsg(reply || "(no reply)");
   } catch (err) {
-    console.error("[/api/chat] error:", err);
-    return res.status(500).json({ ok: false, error: formatErr(err) });
+    addError(`(network error) ${err?.message || err}`);
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = "Send";
+  }
+});
+
+// ---------- Leave flow ----------
+leaveBtn.addEventListener("click", () => {
+  try {
+    localStorage.removeItem("party_token");
+    localStorage.removeItem("party_name");
+    localStorage.removeItem("party_code");
+    sessionStorage.removeItem(HISTORY_KEY);
+  } finally {
+    redirectToJoin();
+  }
+});
+
+// ---------- Translation: translate any selected text (Alt+T) ----------
+async function translateSelection(direction = "auto") {
+  // Get selected text (fallback: last assistant msg)
+  let sel = (window.getSelection?.().toString() || "").trim();
+  if (!sel) {
+    const msgs = Array.from(chatScroll.querySelectorAll(".msg.you"));
+    sel = msgs.length ? msgs[msgs.length - 1].textContent : "";
+  }
+  if (!sel) {
+    showTranslation(`<div style="color:#e5e7eb">No text selected to translate.</div>`);
+    return;
+  }
+
+  // Build a one-off message set so this doesn't pollute your main history
+  const translateSystem =
+    "You are a translator for a Spanish-learning app. Detect the language. " +
+    "If the text is Spanish, translate to clear, natural English. " +
+    "If the text is English, translate to simple, natural Spanish (A1–A2). " +
+    "Do not add commentary—return only the translation.";
+
+  const messages = [
+    { role: "system", content: translateSystem },
+    { role: "user", content: sel }
+  ];
+
+  // Call the same /api/chat endpoint
+  try {
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages })
+    });
+    const text = await r.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
+
+    if (!r.ok || !data?.ok) {
+      const detail = (data && data.error) ? data.error : `HTTP ${r.status}: ${text.slice(0,200)}`;
+      showTranslation(`<div style="color:#ffb4b4">Translation error: ${escapeHtml(detail)}</div>`);
+      return;
+    }
+
+    const translated = (data.reply || "").trim();
+    showTranslation(`
+      <div style="font-weight:700; margin-bottom:6px;">Traducción</div>
+      <div>${escapeHtml(translated)}</div>
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button type="button" onclick="hideTranslation()" style="padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,.15); background:#111827; color:#fff;">Cerrar</button>
+      </div>
+    `);
+  } catch (err) {
+    showTranslation(`<div style="color:#ffb4b4">Network error: ${escapeHtml(err?.message || String(err))}</div>`);
   }
 }
+
+// Keyboard shortcut: Alt+T to translate current selection
+document.addEventListener("keydown", (e) => {
+  if (e.altKey && e.key.toLowerCase() === "t") {
+    e.preventDefault();
+    translateSelection().catch(() => {});
+  }
+});
+
+// Expose if you want to trigger from buttons elsewhere
+window.translateSelection = translateSelection;
+
+// ---------- Tiny util ----------
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+// QoL
+inputEl.focus();
