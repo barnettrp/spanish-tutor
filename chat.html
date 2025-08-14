@@ -1,55 +1,46 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Chat — Spanish Tutor (Party Mode)</title>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
-  <style>
-    /* Minimal layout helpers; your styles.css can override these */
-    :root { color-scheme: light dark; }
-    body { margin: 0; font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
-    header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #e6e6e6; }
-    header .left { display:flex; align-items:center; gap:10px; }
-    header .pill { text-decoration:none; padding:6px 10px; border:1px solid #ddd; border-radius:999px; font-size:.9rem; }
-    .container { max-width:960px; margin:0 auto; padding:16px; }
-    .card { border:1px solid #eee; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; min-height:60vh; }
-    .chat-head { padding:12px 14px; border-bottom:1px solid #eee; font-weight:800; }
-    .chat-body { padding:12px; flex:1; overflow:auto; background:rgba(0,0,0,0.02); }
-    .msg { margin:8px 0; max-width:75%; padding:10px 12px; border-radius:12px; line-height:1.3; }
-    .msg.me { margin-left:auto; background:#dff7df; }
-    .msg.you { background:#fff; border:1px solid #eee; }
-    .sys { color:#666; font-size:.9rem; padding:6px 0; }
-    .chat-input { display:flex; gap:8px; padding:12px; border-top:1px solid #eee; background:#fff; }
-    .input, input[type="text"] { flex:1; padding:10px 12px; border-radius:10px; border:1px solid #ccc; font:inherit; }
-    .btn { padding:10px 14px; border-radius:10px; border:1px solid #ccc; background:#fff; cursor:pointer; font:inherit; }
-    .btn.primary { background:#111; color:#fff; border-color:#111; }
-    .small { font-size:.9rem; }
-    .status { margin-left:8px; opacity:.7; font-size:.9rem; }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="left">
-      <a class="pill" href="index.html" aria-label="Home">Home</a>
-      <strong>Party Chat</strong>
-      <span id="userBadge" class="small status"></span>
-    </div>
-    <div class="right">
-      <button id="leaveBtn" class="pill" type="button">Leave party</button>
-    </div>
-  </header>
+<script>
+  const $ = (id) => document.getElementById(id);
 
-  <div class="container">
-    <div class="card">
-      <div class="chat-head">
-        Conversation
-        <span id="connStatus" class="status">checking session…</span>
-      </div>
-      <div id="chatScroll" class="chat-body" aria-live="polite">
-        <div class="sys" id="bootMsg">Loading…</div>
-      </div>
-      <form id="composer" class="chat-input" autocomplete="off">
-        <input id="text" type="text" placeholder="Type a message…" />
-        <button id="send" class="btn primary" type="submit">Send</b
+  $("join").addEventListener("click", async () => {
+    const name = $("name").value.trim();
+    const code = $("code").value.trim();
+    const msg  = $("msg");
+
+    msg.textContent = "";
+
+    if (!name || !code) {
+      msg.textContent = "Please enter both your name and the party code.";
+      return;
+    }
+
+    try {
+      const r = await fetch("/api/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, code })
+      });
+
+      // Try to parse JSON, but don't crash if it's not JSON
+      const text = await r.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch {}
+
+      if (!r.ok) {
+        const serverMsg = (data && (data.error || data.message)) || text || "Could not join.";
+        msg.textContent = `Unable to join. HTTP ${r.status}. ${serverMsg.slice(0,200)}`;
+        return;
+      }
+
+      // ✅ Save session for chat.html
+      const token = (data && data.token) || `dev_${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem("party_token", token);
+      localStorage.setItem("party_name", name);
+      localStorage.setItem("party_code", code);
+
+      // ✅ Go to chat.html (not conversation.html)
+      location.href = "chat.html";
+    } catch (err) {
+      msg.textContent = `Network error: ${err && err.message ? err.message : err}`;
+    }
+  });
+</script>
