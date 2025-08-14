@@ -1,43 +1,29 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Join</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }
-    .card { max-width: 520px; padding: 1rem 1.25rem; border: 1px solid #ddd; border-radius: 12px; }
-    .row { display: flex; gap: .5rem; margin-top: .75rem; }
-    input, button { font: inherit; padding: .65rem .75rem; border-radius: 10px; border: 1px solid #ccc; }
-    button { cursor: pointer; }
-    .muted { color: #666; font-size: .9rem; }
-    .error { color: #b00020; margin-top: .5rem; }
-    .ok { color: #0a7a34; margin-top: .5rem; }
-    .hidden { display: none; }
-  </style>
-</head>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Join — Spanish Tutor</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css"></head>
 <body>
-  <h1>Join</h1>
-
-  <div id="app" class="card">
-    <form id="joinForm">
-      <label>
-        Email<br />
-        <input id="email" type="email" placeholder="you@example.com" required />
-      </label>
-      <div class="row">
-        <input id="code" type="text" placeholder="Invite code (optional)" />
-        <button id="joinBtn" type="submit">Join</button>
-      </div>
-      <div class="muted" id="hint">Tip: you can also pass ?email=&code= in the URL.</div>
-      <div id="status" class="muted" aria-live="polite"></div>
-      <div id="err" class="error hidden"></div>
-      <div id="ok" class="ok hidden"></div>
-    </form>
-  </div>
-
-  <!-- IMPORTANT: use type="module" if your JS uses imports/exports -->
-  <script type="module" src="./join.js"></script>
-</body>
-</html>
+<div class="container">
+<header><div class="logo" aria-hidden="true"></div><div><h1>Join Party</h1>
+<div class="sub">Enter your name and the invite code.</div>
+<div class="nav"><a class="pill" href="index.html">Home</a></div>
+</div></header>
+<div class="card" style="max-width:560px;">
+<label class="small">Your display name</label><input id="name" class="input" placeholder="e.g., Rick" />
+<label class="small" style="margin-top:8px;">Party code</label><input id="code" class="input" placeholder="e.g., RICK-SPANISH-01" />
+<div class="row" style="margin-top:12px;"><button id="join" class="btn">Join</button></div>
+<div id="msg" class="small" style="margin-top:10px;"></div></div></div>
+<footer>© Spanish Tutor — party mode</footer>
+<script>
+document.getElementById("join").addEventListener("click", async ()=>{
+  const name = document.getElementById("name").value.trim();
+  const code = document.getElementById("code").value.trim();
+  const msg = document.getElementById("msg");
+  if(!name || !code){ msg.textContent = "Please enter both your name and the party code."; return; }
+  const r = await fetch("/api/join", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ name, code }) });
+  const data = await r.json().catch(()=>({}));
+  if(!r.ok){ msg.textContent = data.error || "Could not join."; return; }
+  location.href = "conversation.html";
+});
+</script></body></html>
