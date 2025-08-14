@@ -1,6 +1,106 @@
 <!doctype html>
 <html lang="en">
 <head>
+  :root { --vh: 1vh; } /* fallback for older iOS */
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #0b0b0c;
+  color: #fff;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+/* Page frame: fills the viewport height */
+.app {
+  min-height: 100dvh;                           /* modern mobiles */
+  min-height: calc(var(--vh, 1vh) * 100);       /* fallback */
+  display: flex;
+  flex-direction: column;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Optional header (fixed height) */
+.app__header {
+  flex: 0 0 auto;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+/* The ONLY scrollable area */
+.app__content {
+  flex: 1 1 auto;
+  min-height: 0;                       /* critical so flex children can scroll */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;   /* smooth on iOS */
+  padding: 12px;
+}
+
+/* Input pinned to the bottom with safe-area padding */
+.app__input {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(255,255,255,.08);
+  background: #0b0b0c;
+}
+
+.app__input input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: #151517;
+  color: #fff;
+}
+
+.app__input button {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: none;
+  background: #3b82f6;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Translation popup fixed near the bottom (above input) */
+.translate-pop {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(64px + env(safe-area-inset-bottom));
+  z-index: 9999;
+  max-width: 720px;
+  margin: 0 auto;
+
+  background: #151517;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4);
+
+  transform: translateY(16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform .2s ease, opacity .2s ease;
+}
+
+.translate-pop.is-open {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* (Optional) message styling */
+.message { padding: 8px 10px; margin: 6px 0; border-radius: 10px; }
+.message.from-user { background: #1f2937; align-self: flex-end; }
+.message.from-ai    { background: #111827; align-self: flex-start; }
+
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta charset="utf-8"/>
   <title>Chat — Spanish Tutor (Party Mode)</title>
