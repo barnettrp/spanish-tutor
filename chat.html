@@ -28,6 +28,32 @@
   </style>
 </head>
 <body>
+  <body>
+  <div class="app">
+    <header class="app__header">
+      <!-- your header / title bar -->
+      Spanish Tutor
+    </header>
+    
+    <main id="chat-scroll" class="app__content">
+      <!-- your messages go here -->
+      <div class="message from-user">Hola, ¿cómo estás?</div>
+      <div class="message from-ai">¡Muy bien! ¿Y tú?</div>
+      <!-- … -->
+    </main>
+
+    <form class="app__input" id="chat-form">
+      <input id="chat-input" type="text" placeholder="Escribe aquí…" />
+      <button type="submit">Send</button>
+    </form>
+  </div>
+
+  <!-- Translation popup lives OUTSIDE the flow and is fixed near the bottom -->
+  <div id="translate-pop" class="translate-pop" hidden></div>
+
+  <script src="chat.js"></script>
+</body>
+
   <header>
     <div class="left">
       <a class="pill" href="index.html" aria-label="Home">Home</a>
