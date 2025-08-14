@@ -1,29 +1,110 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Join — Spanish Tutor</title>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css"></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Join — Spanish Tutor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .error { color:#b00020 }
+    .ok { color:#0a7a34 }
+  </style>
+</head>
 <body>
-<div class="container">
-<header><div class="logo" aria-hidden="true"></div><div><h1>Join Party</h1>
-<div class="sub">Enter your name and the invite code.</div>
-<div class="nav"><a class="pill" href="index.html">Home</a></div>
-</div></header>
-<div class="card" style="max-width:560px;">
-<label class="small">Your display name</label><input id="name" class="input" placeholder="e.g., Rick" />
-<label class="small" style="margin-top:8px;">Party code</label><input id="code" class="input" placeholder="e.g., RICK-SPANISH-01" />
-<div class="row" style="margin-top:12px;"><button id="join" class="btn">Join</button></div>
-<div id="msg" class="small" style="margin-top:10px;"></div></div></div>
-<footer>© Spanish Tutor — party mode</footer>
-<script>
-document.getElementById("join").addEventListener("click", async ()=>{
-  const name = document.getElementById("name").value.trim();
-  const code = document.getElementById("code").value.trim();
-  const msg = document.getElementById("msg");
-  if(!name || !code){ msg.textContent = "Please enter both your name and the party code."; return; }
-  const r = await fetch("/api/join", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ name, code }) });
-  const data = await r.json().catch(()=>({}));
-  if(!r.ok){ msg.textContent = data.error || "Could not join."; return; }
-  location.href = "conversation.html";
-});
-</script></body></html>
+  <div class="container">
+    <header>
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1>Join Party</h1>
+        <div class="sub">Enter your name and the invite code.</div>
+        <div class="nav"><a class="pill" href="index.html">Home</a></div>
+      </div>
+    </header>
+
+    <div class="card" style="max-width:560px;">
+      <form id="joinForm" novalidate>
+        <label class="small">Your display name</label>
+        <input id="name" class="input" placeholder="e.g., Rick" autocomplete="name" required />
+        <label class="small" style="margin-top:8px;">Party code</label>
+        <input id="code" class="input" placeholder="e.g., RICK-SPANISH-01" required />
+        <div class="row" style="margin-top:12px;">
+          <button id="join" class="btn" type="submit">Join</button>
+        </div>
+      </form>
+      <div id="msg" class="small" style="margin-top:10px;" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <footer>© Spanish Tutor — party mode</footer>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+    const $form = el("joinForm");
+    const $name = el("name");
+    const $code = el("code");
+    const $btn  = el("join");
+    const $msg  = el("msg");
+
+    function setMsg(text, kind) {
+      $msg.textContent = text;
+      $msg.classList.remove("error","ok");
+      if (kind) $msg.classList.add(kind);
+    }
+
+    async function safeJson(res) {
+      const text = await res.text();
+      try { return { json: JSON.parse(text), raw: text }; }
+      catch { return { json: null, raw: text }; }
+    }
+
+    $form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      setMsg("");
+
+      const name = $name.value.trim();
+      const code = $code.value.trim();
+
+      if (!name || !code) {
+        setMsg("Please enter both your name and the party code.", "error");
+        return;
+      }
+
+      $btn.disabled = true;
+      $btn.textContent = "Joining…";
+      setMsg("Contacting server…");
+
+      try {
+        const res = await fetch("/api/join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, code })
+        });
+
+        const { json, raw } = await safeJson(res);
+
+        if (!res.ok) {
+          const serverMsg =
+            (json && (json.error || json.message)) ||
+            (raw ? raw.slice(0, 200) : "") ||
+            "Unknown error";
+          setMsg(`Unable to join. HTTP ${res.status}. ${serverMsg}`, "error");
+          console.error("Join error:", { status: res.status, body: raw });
+          return;
+        }
+
+        setMsg(json?.message || "Joined successfully. Redirecting…", "ok");
+        // Pass context through if you want:
+        // location.href = `conversation.html?name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}`;
+        location.href = "conversation.html";
+      } catch (err) {
+        setMsg(`Network error: ${err?.message || err}`, "error");
+        console.error(err);
+      } finally {
+        $btn.disabled = false;
+        $btn.textContent = "Join";
+      }
+    });
+  </script>
+</body>
+</html>
