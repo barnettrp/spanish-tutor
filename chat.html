@@ -1,46 +1,216 @@
-<script>
-  const $ = (id) => document.getElementById(id);
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Chat — Spanish Tutor (Party Mode)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin:0; font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #e6e6e6; }
+    header .left { display:flex; align-items:center; gap:10px; }
+    header .pill { text-decoration:none; padding:6px 10px; border:1px solid #ddd; border-radius:999px; font-size:.9rem; }
+    .container { max-width:960px; margin:0 auto; padding:16px; }
+    .card { border:1px solid #eee; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; min-height:60vh; }
+    .chat-head { padding:12px 14px; border-bottom:1px solid #eee; font-weight:800; }
+    .chat-body { padding:12px; flex:1; overflow:auto; background:rgba(0,0,0,0.02); }
+    .msg { margin:8px 0; max-width:75%; padding:10px 12px; border-radius:12px; line-height:1.35; white-space:pre-wrap; }
+    .msg.me { margin-left:auto; background:#dff7df; }
+    .msg.you { background:#fff; border:1px solid #eee; }
+    .msg.err { background:#ffe8e8; border:1px solid #ffb4b4; }
+    .sys { color:#666; font-size:.9rem; padding:6px 0; }
+    .chat-input { display:flex; gap:8px; padding:12px; border-top:1px solid #eee; background:#fff; }
+    .input, input[type="text"] { flex:1; padding:10px 12px; border-radius:10px; border:1px solid #ccc; font:inherit; }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid #ccc; background:#111; color:#fff; cursor:pointer; font:inherit; }
+    .status { margin-left:8px; opacity:.7; font-size:.9rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="left">
+      <a class="pill" href="index.html" aria-label="Home">Home</a>
+      <strong>Party Chat</strong>
+      <span id="userBadge" class="status"></span>
+    </div>
+    <div class="right">
+      <button id="leaveBtn" class="pill" type="button">Leave party</button>
+    </div>
+  </header>
 
-  $("join").addEventListener("click", async () => {
-    const name = $("name").value.trim();
-    const code = $("code").value.trim();
-    const msg  = $("msg");
+  <div class="container">
+    <div class="card">
+      <div class="chat-head">
+        Conversation
+        <span id="connStatus" class="status">checking session…</span>
+      </div>
+      <div id="chatScroll" class="chat-body" aria-live="polite">
+        <div class="sys" id="bootMsg">Loading…</div>
+      </div>
+      <form id="composer" class="chat-input" autocomplete="off">
+        <input id="text" type="text" placeholder="Type a message…" />
+        <button id="send" class="btn" type="submit">Send</button>
+      </form>
+    </div>
+  </div>
 
-    msg.textContent = "";
+  <footer class="container" style="opacity:.7; padding-top:12px;">
+    © Spanish Tutor — party mode
+  </footer>
 
-    if (!name || !code) {
-      msg.textContent = "Please enter both your name and the party code.";
-      return;
+  <script type="module">
+    // ---------- Auth guard ----------
+    const token = localStorage.getItem("party_token");
+    const name  = localStorage.getItem("party_name") || "Guest";
+    const code  = localStorage.getItem("party_code") || "";
+
+    const connStatus = document.getElementById("connStatus");
+    const userBadge  = document.getElementById("userBadge");
+    const chatScroll = document.getElementById("chatScroll");
+    const bootMsg    = document.getElementById("bootMsg");
+    const composer   = document.getElementById("composer");
+    const inputEl    = document.getElementById("text");
+    const leaveBtn   = document.getElementById("leaveBtn");
+    const sendBtn    = document.getElementById("send");
+
+    userBadge.textContent = `${name}${code ? " · " + code : ""}`;
+
+    function redirectToJoin() {
+      location.replace("join.html");
     }
 
-    try {
-      const r = await fetch("/api/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, code })
-      });
+    if (!token) {
+      redirectToJoin();
+      throw new Error("No party_token present");
+    }
 
-      // Try to parse JSON, but don't crash if it's not JSON
-      const text = await r.text();
-      let data = null;
-      try { data = JSON.parse(text); } catch {}
-
-      if (!r.ok) {
-        const serverMsg = (data && (data.error || data.message)) || text || "Could not join.";
-        msg.textContent = `Unable to join. HTTP ${r.status}. ${serverMsg.slice(0,200)}`;
-        return;
+    // Optional server validation — safe to keep even if /api/me doesn't exist.
+    (async function validateSessionMaybe(){
+      connStatus.textContent = "validating…";
+      try {
+        const res = await fetch("/api/me", { credentials: "include" });
+        if (res.status === 404) { connStatus.textContent = "connected"; return; }
+        if (!res.ok) { connStatus.textContent = "unauthorized"; redirectToJoin(); return; }
+        connStatus.textContent = "connected";
+      } catch {
+        connStatus.textContent = "offline (still usable)";
       }
+    })();
 
-      // ✅ Save session for chat.html
-      const token = (data && data.token) || `dev_${Math.random().toString(36).slice(2)}`;
-      localStorage.setItem("party_token", token);
-      localStorage.setItem("party_name", name);
-      localStorage.setItem("party_code", code);
+    // ---------- Chat history (client-side) ----------
+    // We persist to sessionStorage so reload keeps the thread during the session.
+    const HISTORY_KEY = "party_history";
+    let history = [];
+    try {
+      history = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || "[]");
+    } catch { history = []; }
 
-      // ✅ Go to chat.html (not conversation.html)
-      location.href = "chat.html";
-    } catch (err) {
-      msg.textContent = `Network error: ${err && err.message ? err.message : err}`;
+    // Ensure we always have a system prompt at index 0
+    const SYSTEM_PROMPT = "You are a helpful Spanish tutor. Be concise, friendly, and focus on A1–A2 level explanations unless the user asks for more depth.";
+    if (!history.length || history[0]?.role !== "system") {
+      history.unshift({ role: "system", content: SYSTEM_PROMPT });
     }
-  });
-</script>
+
+    // Rehydrate visible messages (skip system)
+    for (const m of history) {
+      if (m.role === "user") addMsg(m.content, "me", true);
+      if (m.role === "assistant") addMsg(m.content, "you", true);
+    }
+    if (bootMsg) {
+      bootMsg.textContent = `Welcome, ${name}!`;
+      setTimeout(() => bootMsg.remove(), 900);
+    }
+
+    function saveHistory() {
+      sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    }
+
+    function addMsg(text, who = "you", skipSave = false) {
+      const div = document.createElement("div");
+      div.className = `msg ${who}`;
+      div.textContent = text;
+      chatScroll.appendChild(div);
+      chatScroll.scrollTop = chatScroll.scrollHeight;
+      if (!skipSave) {
+        history.push({ role: who === "me" ? "user" : "assistant", content: text });
+        saveHistory();
+      }
+    }
+
+    function addError(text) {
+      const div = document.createElement("div");
+      div.className = `msg err`;
+      div.textContent = text;
+      chatScroll.appendChild(div);
+      chatScroll.scrollTop = chatScroll.scrollHeight;
+    }
+
+    // Light client-side trim to avoid giant payloads
+    function trimmedHistory(maxPairs = 12) {
+      const sys = history[0]; // system prompt
+      const rest = history.slice(1); // user/assistant turns
+      const kept = rest.slice(-maxPairs * 2);
+      return [sys, ...kept];
+    }
+
+    // ---------- Send handler ----------
+    composer.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = inputEl.value.trim();
+      if (!msg) return;
+
+      // Local echo + push to history
+      addMsg(msg, "me");
+      inputEl.value = "";
+      inputEl.focus();
+
+      // Disable send while waiting
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Sending…";
+
+      try {
+        const payload = { messages: trimmedHistory() }; // always at least [system, user]
+        const r = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const text = await r.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch {}
+
+        if (!r.ok || !data?.ok) {
+          const detail = (data && data.error) ? data.error : `HTTP ${r.status}: ${text.slice(0,200)}`;
+          addError(`(error) ${detail}`);
+          return;
+        }
+
+        const reply = (data.reply || "").trim();
+        addMsg(reply || "(no reply)");
+      } catch (err) {
+        addError(`(network error) ${err?.message || err}`);
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Send";
+      }
+    });
+
+    // ---------- Leave party ----------
+    leaveBtn.addEventListener("click", () => {
+      try {
+        localStorage.removeItem("party_token");
+        localStorage.removeItem("party_name");
+        localStorage.removeItem("party_code");
+        sessionStorage.removeItem(HISTORY_KEY);
+      } finally {
+        redirectToJoin();
+      }
+    });
+
+    // QoL
+    inputEl.focus();
+  </script>
+</body>
+</html>
