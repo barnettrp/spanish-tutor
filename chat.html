@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual" />
   <title>Chat — Spanish Tutor (Party Mode)</title>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
@@ -16,23 +16,30 @@
       --safe-bottom: env(safe-area-inset-bottom);
     }
     * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;            /* kill page scroll */
+      overscroll-behavior: none;   /* no rubber-band on root */
+    }
     body {
       background: #0b0b0c; color:#fff; font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      /* Kill ALL page scrolling — only the chat list scrolls */
-      overflow: hidden;
-      overscroll-behavior: none;
       padding-left: var(--safe-left);
       padding-right: var(--safe-right);
     }
 
-    /* App wrapper (not scrollable) */
-    .app { position: relative; width: 100%; height: 100%; }
+    /* App wrapper */
+    .app {
+      position: relative;
+      width: 100%;
+      height: 100svh;                     /* dynamic viewport on iOS */
+      height: 100dvh;
+      height: calc(var(--vh, 0) * 1px);   /* precise px fallback via JS */
+    }
 
     /* ===== Fixed rails ===== */
-    /* Header fixed to the visual viewport top */
     header.app__header {
-      position: fixed; inset: 0 0 auto 0; /* top:0, left:0, right:0 */
+      position: fixed; inset: 0 0 auto 0;
       height: var(--head-h);
       display:flex; align-items:center; justify-content:space-between;
       padding: 12px 16px;
@@ -46,9 +53,9 @@
     }
     .status { margin-left:8px; opacity:.7; font-size:.9rem; }
 
-    /* Composer fixed to the visual viewport bottom (follows keyboard) */
+    /* Composer fixed to bottom (follows keyboard) */
     #composer {
-      position: fixed; inset: auto 0 calc(var(--safe-bottom)) 0; /* bottom pinned + safe area */
+      position: fixed; inset: auto 0 calc(var(--safe-bottom)) 0;
       min-height: var(--comp-h);
       display:flex; gap:8px; padding:12px;
       border-top:1px solid #2a2a2a; background:#0f0f12; z-index: 50;
@@ -56,7 +63,7 @@
     #composer input[type="text"] {
       flex:1 1 auto; min-width:0;
       padding:10px 12px; border-radius:10px; border:1px solid #3a3a3a;
-      background:#151517; color:#fff; font-size:16px; /* prevents iOS zoom */
+      background:#151517; color:#fff; font-size:16px; /* avoids iOS zoom */
     }
     #composer .btn {
       padding:10px 14px; border-radius:10px; border:1px solid #3a3a3a;
@@ -64,7 +71,7 @@
     }
     #composer .pill { border-color:#3a3a3a; background:#151517; color:#fff; font-size:.9rem; padding:6px 10px; }
 
-    /* The ONLY scrollable region — fills between fixed header & composer */
+    /* The ONLY scrollable region — fills between header & composer */
     .viewport-strip {
       position: fixed;
       top: var(--head-h);
@@ -73,13 +80,15 @@
       overflow: hidden; /* container itself not scrollable */
       z-index: 1;
     }
-    /* Your existing card layout inside the strip */
+
+    /* Your card layout inside the strip */
     .container { max-width: 960px; width: 100%; height: 100%; margin: 0 auto; padding: 16px; }
     .card {
       border: 1px solid #2a2a2a; border-radius: 12px; overflow: hidden;
       display: flex; flex-direction: column; background: #0f0f12; height: 100%;
     }
     .chat-head { padding: 12px 14px; border-bottom: 1px solid #2a2a2a; font-weight: 800; flex: 0 0 auto; }
+
     /* Scroll ONLY here */
     #chatScroll.chat-body {
       padding: 12px;
@@ -87,6 +96,8 @@
       overflow-y: auto; -webkit-overflow-scrolling: touch;
       background: #0e0e11;
       word-break: break-word; overflow-wrap: anywhere;
+      overscroll-behavior-y: contain;  /* no bounce handoff */
+      touch-action: pan-y;             /* vertical pan allowed here */
     }
 
     .msg { margin:8px 0; max-width:75%; padding:10px 12px; border-radius:12px; line-height:1.35; white-space:pre-wrap; }
@@ -151,6 +162,69 @@
       }
       window.addEventListener('orientationchange', setVars);
       window.addEventListener('resize', setVars);
+    })();
+
+    // --- Dynamic viewport height -> --vh (in px) ---
+    (function setDynamicVh(){
+      const root = document.documentElement;
+      const set = () => {
+        const h = (window.visualViewport ? visualViewport.height : window.innerHeight);
+        root.style.setProperty('--vh', String(h));
+      };
+      set();
+      if (window.visualViewport) {
+        visualViewport.addEventListener('resize', set);
+        visualViewport.addEventListener('scroll', set);
+      } else {
+        window.addEventListener('resize', set);
+      }
+    })();
+
+    // --- Lock page scroll; only #chatScroll can pan ---
+    (function scrollJail(){
+      // Double-lock both scrolling elements (iOS sometimes uses <html>, sometimes <body>)
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+
+      const scroller = () => document.getElementById('chatScroll');
+
+      // Prevent touchmove outside the chat scroller
+      document.addEventListener('touchmove', (e) => {
+        const s = scroller();
+        if (!s) return;
+        if (!s.contains(e.target)) e.preventDefault();
+      }, { passive: false });
+
+      // Kill iOS rubber-band inside the scroller
+      const guardRubberBand = () => {
+        const s = scroller(); if (!s) return;
+        s.addEventListener('touchstart', () => {
+          if (s.scrollTop <= 0) s.scrollTop = 1;
+          const atBottom = s.scrollTop + s.clientHeight >= s.scrollHeight;
+          if (atBottom) s.scrollTop = s.scrollTop - 1;
+        }, { passive: true });
+
+        s.addEventListener('touchmove', (ev) => {
+          // If content doesn't overflow, prevent a page pan
+          if (s.scrollHeight <= s.clientHeight) ev.preventDefault();
+        }, { passive: false });
+      };
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', guardRubberBand, { once:true });
+      } else {
+        guardRubberBand();
+      }
+
+      // Keep the latest messages visible when focusing the input (keyboard up)
+      const input = document.getElementById('text');
+      if (input) {
+        input.addEventListener('focus', () => {
+          const s = scroller();
+          if (!s) return;
+          requestAnimationFrame(() => { s.scrollTop = s.scrollHeight; });
+        });
+      }
     })();
 
     // Translation popup helpers (unchanged)
@@ -218,6 +292,42 @@
   <div id="limitBanner">
     <strong>Rate/usage limit:</strong> You’ve hit today’s limit. Try again later.
   </div>
+
+  <!-- Auto-scroll (iMessage-style) -->
+  <script>
+    (function autoScroll() {
+      const scroller = document.getElementById('chatScroll');
+      if (!scroller) return;
+
+      // Expose a helper your chat.js can call after appending a message
+      window.scrollChatToBottom = (smooth = true) => {
+        const behavior = smooth ? 'smooth' : 'auto';
+        scroller.scrollTo({ top: scroller.scrollHeight, behavior });
+      };
+
+      // Consider "near bottom" if the gap is less than 120px
+      const nearBottom = () =>
+        (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight) < 120;
+
+      // Scroll if new nodes are added *and* the user was already near bottom
+      const observer = new MutationObserver((mutations) => {
+        const added = mutations.some(m => m.addedNodes && m.addedNodes.length);
+        if (!added) return;
+        if (nearBottom()) requestAnimationFrame(() => window.scrollChatToBottom(true));
+      });
+      observer.observe(scroller, { childList: true, subtree: true });
+
+      // Images load after insertion—keep bottom pinned if we were near it
+      scroller.addEventListener('load', (e) => {
+        if (e.target && e.target.tagName === 'IMG' && nearBottom()) {
+          requestAnimationFrame(() => window.scrollChatToBottom(false));
+        }
+      }, true);
+
+      // Initial snap to bottom on first render
+      requestAnimationFrame(() => window.scrollChatToBottom(false));
+    })();
+  </script>
 
   <!-- Your existing client logic -->
   <script type="module" src="chat.js"></script>
