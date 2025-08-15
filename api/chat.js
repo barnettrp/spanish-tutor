@@ -1,120 +1,313 @@
-// api/chat.js — Vercel Node Serverless (NOT Edge)
+// chat.js — Client-side logic (drop-in)
 
-// ---- helpers ----
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-function formatErr(e) { return typeof e === "string" ? e : (e?.message || "Unknown error"); }
+// ---------------------- Viewport & keyboard-safe height ----------------------
+(function setupViewportVars() {
+  const root = document.documentElement;
 
-function trimHistory(history, maxPairs = 12) {
-  const sys = history.filter(m => m.role === "system");
-  const rest = history.filter(m => m.role !== "system");
+  function applyHeights() {
+    const vv = window.visualViewport;
+    const vhPx = vv ? vv.height : window.innerHeight;       // exact visible height in px
+    root.style.setProperty('--vhpx', vhPx + 'px');           // primary, used by .app { height: var(--vhpx) }
+    root.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px'); // fallback
+  }
+
+  applyHeights();
+  if (window.visualViewport) {
+    visualViewport.addEventListener('resize', applyHeights);
+    visualViewport.addEventListener('scroll', applyHeights); // iOS fires on keyboard open/close
+  }
+  window.addEventListener('resize', applyHeights);
+  window.addEventListener('orientationchange', applyHeights);
+})();
+
+// ---------------------- Track composer height for popup docking ----------------------
+(function trackComposerHeight(){
+  const root = document.documentElement;
+  const set = () => {
+    const c = document.getElementById('composer');
+    root.style.setProperty('--composer-h', (c ? c.offsetHeight : 64) + 'px');
+  };
+  const ready = () => {
+    set();
+    const c = document.getElementById('composer');
+    if (c && window.ResizeObserver) new ResizeObserver(set).observe(c);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready, { once:true });
+  else ready();
+  window.addEventListener('resize', set);
+  window.addEventListener('orientationchange', set);
+})();
+
+// ---------------------- Translation popup helpers (inline safety) ----------------------
+window.showTranslation = window.showTranslation || function (html) {
+  const el = document.getElementById('translate-pop');
+  if (!el) return;
+  el.innerHTML = html;
+  el.hidden = false;
+  void el.offsetWidth; // reflow so transition plays
+  el.classList.add('is-open');
+};
+window.hideTranslation = window.hideTranslation || function () {
+  const el = document.getElementById('translate-pop');
+  if (!el) return;
+  el.classList.remove('is-open');
+  setTimeout(() => { el.hidden = true; }, 200);
+};
+
+// ---------------------- Small helpers ----------------------
+const $ = (id) => document.getElementById(id);
+const HISTORY_KEY = "party_history";
+const SYSTEM_PROMPT =
+  "You are a helpful Spanish tutor. Be concise, friendly, and focus on A1–A2 level explanations unless the user asks for more depth.";
+
+function trimHistory(full, maxPairs = 12) {
+  const sys = full.find(m => m.role === "system") || { role: "system", content: SYSTEM_PROMPT };
+  const rest = full.filter(m => m.role !== "system");
   const kept = rest.slice(-maxPairs * 2);
-  return [...sys.slice(0, 1), ...kept];
+  return [sys, ...kept];
+}
+function loadHistory() {
+  try {
+    const arr = JSON.parse(sessionStorage.getItem(HISTORY_KEY) || "[]");
+    if (!arr.length || arr[0]?.role !== "system") arr.unshift({ role: "system", content: SYSTEM_PROMPT });
+    return arr;
+  } catch { return [{ role: "system", content: SYSTEM_PROMPT }]; }
+}
+function saveHistory(h) { sessionStorage.setItem(HISTORY_KEY, JSON.stringify(h)); }
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
 }
 
-// Simple heuristic: boost when inputs are long/complex
-function shouldBoost(messages) {
-  const lastUser = [...messages].reverse().find(m => m.role === "user");
-  const text = (lastUser?.content || "").toLowerCase();
+// ---------------------- Element refs ----------------------
+const connStatus  = $("connStatus");
+const userBadge   = $("userBadge");
+const chatScroll  = $("chatScroll");
+const bootMsg     = $("bootMsg");
+const composer    = $("composer");
+const inputEl     = $("text");
+const leaveBtn    = $("leaveBtn");
+const sendBtn     = $("send");
+const limitBanner = $("limitBanner");
 
-  const longInput = (lastUser?.content?.length || 0) >= 600;    // long user prompt
-  const totalChars = messages.reduce((n, m) => n + (m?.content?.length || 0), 0);
-  const bigPrompt = totalChars >= 12000;                        // ~3k tokens proxy
+// ---------------------- Auth header badges (non-blocking) ----------------------
+const token = localStorage.getItem("party_token");
+const name  = localStorage.getItem("party_name") || "Guest";
+const code  = localStorage.getItem("party_code") || "";
+if (userBadge) userBadge.textContent = `${name}${code ? " · " + code : ""}`;
+function redirectToJoin() { location.replace("join.html"); }
+if (!token) { redirectToJoin(); throw new Error("No party_token present"); }
 
-  const complexCue = /\b(explain|why|analy[sz]e|step[- ]?by[- ]?step|compare|contrast|design|refactor|optimi[sz]e|lesson|curriculum|grammar|syntax|reason|walk me through|break down|examples?)\b/.test(text);
+// Optional: validate session if /api/me exists
+(async () => {
+  if (!connStatus) return;
+  connStatus.textContent = "validating…";
+  try {
+    const res = await fetch("/api/me", { credentials: "include" });
+    if (res.status === 404) { connStatus.textContent = "connected"; return; }
+    if (!res.ok) { connStatus.textContent = "unauthorized"; redirectToJoin(); return; }
+    connStatus.textContent = "connected";
+  } catch {
+    connStatus.textContent = "offline (still usable)";
+  }
+})();
 
-  return longInput || bigPrompt || complexCue;
+// ---------------------- History & render ----------------------
+let history = loadHistory();
+
+function addBubble(text, who = "you", meta = "") {
+  const div = document.createElement("div");
+  div.className = `msg ${who}`;
+  // Use a first child text node so we can append a meta line below
+  div.appendChild(document.createTextNode(text));
+  if (meta) {
+    const small = document.createElement("div");
+    small.style.opacity = "0.6";
+    small.style.fontSize = "0.8rem";
+    small.style.marginTop = "4px";
+    small.textContent = meta;
+    div.appendChild(small);
+  }
+  chatScroll.appendChild(div);
+  chatScroll.scrollTop = chatScroll.scrollHeight;
+}
+function addMsg(text, who = "you", skipSave = false, meta = "") {
+  addBubble(text, who, meta);
+  if (!skipSave) {
+    history.push({ role: (who === "me" ? "user" : "assistant"), content: text });
+    saveHistory(history);
+  }
+}
+function addError(text) { addBubble(text, "err"); }
+
+// Rehydrate (skip system)
+for (const m of history) {
+  if (m.role === "user") addMsg(m.content, "me", true);
+  if (m.role === "assistant") addMsg(m.content, "you", true);
+}
+if (bootMsg) { bootMsg.textContent = `Welcome, ${name}!`; setTimeout(() => bootMsg.remove(), 800); }
+
+// ---------------------- Limit banner helpers ----------------------
+function showLimitBanner(msg) {
+  if (!limitBanner) return;
+  limitBanner.style.display = "block";
+  limitBanner.innerHTML = `<strong>Rate/usage limit:</strong> ${msg || "You’ve hit a limit. Try again later."}`;
+}
+function hideLimitBanner() {
+  if (!limitBanner) return;
+  limitBanner.style.display = "none";
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, error: "Method not allowed" });
+// ---------------------- Network call guards ----------------------
+let inFlight = false;
+let cooldown = false;
+
+// ---------------------- Send flow ----------------------
+composer.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (inFlight || cooldown) return;
+  cooldown = true; setTimeout(() => (cooldown = false), 900);
+
+  const msg = (inputEl?.value || "").trim();
+  if (!msg) return;
+
+  addMsg(msg, "me");
+  if (inputEl) {
+    inputEl.value = "";
+    inputEl.focus();
+  }
+
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = "Sending…"; }
+  inFlight = true;
+
+  try {
+    const messages = trimHistory(history);
+
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages })
+    });
+
+    const text = await r.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
+
+    if (!r.ok || !data?.ok) {
+      const detail = (data && data.error) ? data.error : `HTTP ${r.status}: ${text.slice(0,200)}`;
+      if (/insufficient[_\s-]?quota/i.test(detail)) {
+        showLimitBanner("You’ve reached your usage quota for today/month. Check billing or raise your cap.");
+      } else if (/rate.?limit/i.test(detail) || r.status === 429) {
+        showLimitBanner("Too many requests. Please wait a moment and try again.");
+      } else {
+        hideLimitBanner();
+      }
+      addError(`(error) ${detail}`);
+      return;
+    }
+
+    hideLimitBanner();
+    const reply = (data.reply || "").trim();
+    const modelMeta = data.model_used ? `model: ${data.model_used}` : "";
+    addMsg(reply || "(no reply)", "you", false, modelMeta);
+  } catch (err) {
+    addError(`(network error) ${err?.message || err}`);
+  } finally {
+    inFlight = false;
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = "Send"; }
+  }
+});
+
+// ---------------------- Leave flow ----------------------
+if (leaveBtn) {
+  leaveBtn.addEventListener("click", () => {
+    try {
+      localStorage.removeItem("party_token");
+      localStorage.removeItem("party_name");
+      localStorage.removeItem("party_code");
+      sessionStorage.removeItem(HISTORY_KEY);
+    } finally {
+      redirectToJoin();
+    }
+  });
+}
+
+// ---------------------- Translation: Translate selection (cheaper) ----------------------
+async function translateSelection() {
+  if (inFlight) return; // avoid parallel calls
+
+  // Prefer selected text; fallback to last assistant msg
+  let sel = (window.getSelection?.().toString() || "").trim();
+  if (!sel) {
+    const msgs = Array.from(chatScroll.querySelectorAll(".msg.you"));
+    sel = msgs.length ? (msgs[msgs.length - 1].firstChild?.textContent || "") : "";
+  }
+  if (!sel) {
+    window.showTranslation?.(`<div style="color:#e5e7eb">No text selected to translate.</div>`);
+    return;
   }
 
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ ok: false, error: "OPENAI_API_KEY is not set" });
-    }
+    inFlight = true;
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "system",
+            content:
+              "Translate the user's text. Detect the language. If Spanish → concise, natural English. " +
+              "If English → simple, natural Spanish (A1–A2). Return ONLY the translation, ≤ 60 words."
+          },
+          { role: "user", content: sel }
+        ],
+        _purpose: "translate"
+      })
+    });
 
-    // Allow env overrides if you ever want to swap quickly
-    const BASE_MODEL       = process.env.OPENAI_MODEL || "gpt-5-mini";
-    const BOOST_MODEL      = process.env.OPENAI_MODEL_BOOST || "gpt-5";
-    const TRANSLATE_MODEL  = process.env.OPENAI_TRANSLATE_MODEL || "gpt-5-mini";
+    const text = await r.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
 
-    // ---- parse body safely ----
-    let body = req.body;
-    if (typeof body === "string") { try { body = JSON.parse(body || "{}"); } catch { body = {}; } }
-    if (!body || typeof body !== "object") body = {};
-
-    // Accept {messages} or {message}
-    let incoming = [];
-    if (Array.isArray(body.messages)) {
-      incoming = body.messages;
-    } else if (typeof body.message === "string" && body.message.trim()) {
-      incoming = [
-        { role: "system", content: "You are a helpful Spanish tutor. Be concise." },
-        { role: "user", content: body.message.trim() }
-      ];
-    }
-    if (!Array.isArray(incoming) || incoming.length === 0) {
-      return res.status(400).json({ ok: false, error: "No messages provided" });
-    }
-
-    const isTranslate = body._purpose === "translate";
-
-    // For normal chat, trim history; for translate, send exactly what client provided
-    const messages = isTranslate ? incoming : trimHistory(incoming);
-
-    // ---- choose model automatically ----
-    let model = BASE_MODEL;
-    if (isTranslate) {
-      model = TRANSLATE_MODEL;                // always mini for popup translations
-    } else if (shouldBoost(messages)) {
-      model = BOOST_MODEL;                    // auto-boost to gpt-5 for complex asks
-    }
-
-    // ---- payload budgets ----
-    const payload = {
-      model,
-      messages,
-      max_tokens: isTranslate ? 100 : 500,
-      temperature: isTranslate ? 0 : 0.4,
-    };
-
-    // ---- OpenAI call with light backoff for 429 ----
-    let attempt = 0;
-    while (true) {
-      const r = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const text = await r.text();
-
-      if (r.ok) {
-        let json;
-        try { json = JSON.parse(text); }
-        catch { return res.status(502).json({ ok: false, error: `OpenAI JSON parse failed: ${text.slice(0,200)}` }); }
-
-        const reply = json?.choices?.[0]?.message?.content ?? "";
-        return res.status(200).json({ ok: true, reply: String(reply).trim(), model_used: model });
+    if (!r.ok || !data?.ok) {
+      const detail = (data && data.error) ? data.error : `HTTP ${r.status}: ${text.slice(0,200)}`;
+      if (/insufficient[_\s-]?quota/i.test(detail)) {
+        showLimitBanner("You’ve reached your usage quota for today/month. Check billing or raise your cap.");
+      } else if (/rate.?limit/i.test(detail) || r.status === 429) {
+        showLimitBanner("Too many requests. Please wait a moment and try again.");
       }
-
-      const is429 = r.status === 429 || /rate.?limit/i.test(text);
-      if (is429 && attempt < 3) {
-        await sleep(500 * Math.pow(2, attempt)); // 500ms → 1s → 2s
-        attempt++;
-        continue;
-      }
-
-      return res.status(r.status).json({ ok: false, error: `OpenAI ${r.status}: ${text.slice(0, 500)}` });
+      window.showTranslation?.(`<div style="color:#ffb4b4">Translation error: ${escapeHtml(detail)}</div>`);
+      return;
     }
+
+    hideLimitBanner();
+    const translated = (data.reply || "").trim();
+    window.showTranslation?.(`
+      <div style="font-weight:700; margin-bottom:6px;">Traducción</div>
+      <div>${escapeHtml(translated)}</div>
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button type="button" onclick="hideTranslation()" style="padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,.15); background:#111827; color:#fff;">Cerrar</button>
+      </div>
+    `);
   } catch (err) {
-    console.error("[/api/chat] error:", err);
-    return res.status(500).json({ ok: false, error: formatErr(err) });
+    window.showTranslation?.(`<div style="color:#ffb4b4">Network error: ${escapeHtml(err?.message || String(err))}</div>`);
+  } finally {
+    inFlight = false;
   }
 }
+
+// Keyboard shortcut: Alt+T to translate current selection
+document.addEventListener("keydown", (e) => {
+  if (e.altKey && e.key.toLowerCase() === "t") {
+    e.preventDefault();
+    translateSelection().catch(() => {});
+  }
+});
+
+// Expose globally for the composer button
+window.translateSelection = translateSelection;
+
+// ---------------------- QoL ----------------------
+inputEl?.focus();
