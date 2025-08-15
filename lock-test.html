@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
+  <title>Scroll Lock Test</title>
+  <style>
+    :root { --head-h:56px; --comp-h:64px; }
+    /* 1) Freeze the page itself */
+    html, body {
+      position: fixed; inset: 0; margin: 0; width: 100%; height: 100%;
+      overflow: hidden; overscroll-behavior: none; -webkit-overflow-scrolling: auto;
+      touch-action: none; background: #0b0b0c; color: #fff; font-family: -apple-system, system-ui, sans-serif;
+    }
+
+    /* 2) Fixed header & composer (rails) */
+    header {
+      position: fixed; inset: 0 0 auto 0; height: var(--head-h);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 12px; background: #0b0b0c; border-bottom: 1px solid #2a2a2a; z-index: 10;
+    }
+    #composer {
+      position: fixed; inset: auto 0 0 0; min-height: var(--comp-h);
+      display: flex; gap: 8px; padding: 12px; background: #0f0f12; border-top: 1px solid #2a2a2a; z-index: 10;
+    }
+    #composer input { flex: 1; min-width: 0; font-size: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid #3a3a3a; background:#151517; color:#fff; }
+
+    /* 3) The ONLY scrollable thing */
+    #chatScroll {
+      position: fixed; left: 0; right: 0;
+      top: var(--head-h); bottom: var(--comp-h);
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain; touch-action: pan-y; /* allow vertical pan here only */
+      padding: 12px; background: #0e0e11; z-index: 1;
+    }
+
+    .bubble { max-width: 75%; margin: 8px 0; padding: 10px 12px; border-radius: 12px; background: #111827; color: #e5e7eb; border: 1px solid #2a2a2a; }
+    .me { margin-left: auto; background: #1f2937; color:#fff; }
+  </style>
+  <script>
+    // Dynamic small viewport height for iOS keyboard
+    (function setVh(){
+      const set = () => document.documentElement.style.setProperty('--vh', String(window.visualViewport ? visualViewport.height : innerHeight));
+      set(); if (window.visualViewport){ visualViewport.addEventListener('resize', set); visualViewport.addEventListener('scroll', set); } else { addEventListener('resize', set); }
+    })();
+
+    // Global guard: only allow touchmove inside #chatScroll
+    (function guards(){
+      const scroller = () => document.getElementById('chatScroll');
+      addEventListener('touchmove', (e) => { const s = scroller(); if (s && !s.contains(e.target)) e.preventDefault(); }, {passive:false, capture:true});
+      // kill rubber-band inside the scroller
+      const bind = () => {
+        const s = scroller(); if (!s) return;
+        s.addEventListener('touchstart', () => {
+          if (s.scrollTop <= 0) s.scrollTop = 1;
+          const atBottom = s.scrollTop + s.clientHeight >= s.scrollHeight;
+          if (atBottom) s.scrollTop = s.scrollTop - 1;
+        }, {passive:true});
+        s.addEventListener('touchmove', (ev) => {
+          if (s.scrollHeight <= s.clientHeight) ev.preventDefault();
+        }, {passive:false});
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, {once:true}); else bind();
+    })();
+  </script>
+</head>
+<body>
+  <header>
+    <strong>Lock Test</strong>
+  </header>
+
+  <div id="chatScroll" aria-live="polite">
+    <!-- throw in a bunch of bubbles to force scroll -->
+    <div id="msgs"></div>
+  </div>
+
+  <form id="composer" onsubmit="event.preventDefault(); add();">
+    <input id="txt" placeholder="Type…">
+    <button>Add</button>
+  </form>
+
+  <script>
+    const msgs = document.getElementById('msgs');
+    for (let i=0;i<40;i++) add(i%2===0 ? 'me' : '');
+    function add(cls=''){ const d=document.createElement('div'); d.className='bubble ' + cls; d.textContent='Message '+(msgs.children.length+1); msgs.appendChild(d); }
+  </script>
+</body>
+</html>
