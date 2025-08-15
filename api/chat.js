@@ -1,4 +1,16 @@
 // chat.js — hard lock against iOS keyboard scroll, plus your existing chat features
+// =======================================================
+
+// -------- 0) Scroll helper polyfill (works even if HTML didn't define it) -----
+(function ensureScrollHelper() {
+  if (!('scrollChatToBottom' in window)) {
+    window.scrollChatToBottom = function (smooth = true) {
+      const s = document.getElementById('chatScroll');
+      if (!s) return;
+      s.scrollTo({ top: s.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+    };
+  }
+})();
 
 // ================== 1) Viewport & layout hard-fix ==================
 (function viewportAndLayout() {
@@ -39,7 +51,6 @@
 
   // Lock the page when input is focused (iOS likes to move the root)
   function lockPage() {
-    // store current scroll just in case (should be 0)
     const y = window.scrollY || 0;
     document.body.dataset.lockY = String(y);
     document.body.style.position = 'fixed';
@@ -62,12 +73,10 @@
   function blockBodyTouch(e) {
     const target = e.target;
     const scroll = chatScroll();
-    // Allow touches that start inside the chat list
-    if (scroll && (scroll === target || scroll.contains(target))) return;
+    if (scroll && (scroll === target || scroll.contains(target))) return; // allow inside chat scroller
     e.preventDefault();
   }
 
-  // Wire it up
   const apply = () => applyLayout();
   apply();
   if (window.visualViewport) {
@@ -110,7 +119,7 @@ window.hideTranslation = window.hideTranslation || function () {
   setTimeout(() => { el.hidden = true; }, 200);
 };
 
-// ================== 3) Chat app logic (unchanged behavior) ==================
+// ================== 3) Chat app logic (unchanged behavior, plus auto-scroll taps) ==================
 const $ = (id) => document.getElementById(id);
 const HISTORY_KEY = "party_history";
 const SYSTEM_PROMPT =
@@ -167,6 +176,7 @@ if (!token) { redirectToJoin(); throw new Error("No party_token present"); }
 
 // History & render
 let history = loadHistory();
+
 function addBubble(text, who = "you", meta = "") {
   const div = document.createElement("div");
   div.className = `msg ${who}`;
@@ -180,8 +190,11 @@ function addBubble(text, who = "you", meta = "") {
     div.appendChild(small);
   }
   chatScroll.appendChild(div);
-  chatScroll.scrollTop = chatScroll.scrollHeight;
+
+  // 🔽 Keep the view glued to the newest message when appropriate
+  window.scrollChatToBottom?.(true);
 }
+
 function addMsg(text, who = "you", skipSave = false, meta = "") {
   addBubble(text, who, meta);
   if (!skipSave) {
@@ -189,11 +202,15 @@ function addMsg(text, who = "you", skipSave = false, meta = "") {
     saveHistory(history);
   }
 }
-function addError(text) { addBubble(text, "err"); }
+
+// Boot render from history
 for (const m of history) {
   if (m.role === "user") addMsg(m.content, "me", true);
   if (m.role === "assistant") addMsg(m.content, "you", true);
 }
+// Snap to bottom once after boot so the latest is visible without animation
+requestAnimationFrame(() => window.scrollChatToBottom?.(false));
+
 if (bootMsg) { bootMsg.textContent = `Welcome, ${name}!`; setTimeout(() => bootMsg.remove(), 800); }
 
 // Limit banner
@@ -217,7 +234,11 @@ composer.addEventListener("submit", async (e) => {
   if (!msg) return;
 
   addMsg(msg, "me");
-  if (inputEl) { inputEl.value = ""; inputEl.focus(); }
+  if (inputEl) {
+    inputEl.value = "";
+    // Prevent Safari from trying to move the page when refocusing
+    try { inputEl.focus({ preventScroll: true }); } catch { inputEl.focus(); }
+  }
 
   if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = "Sending…"; }
   inFlight = true;
@@ -260,6 +281,8 @@ composer.addEventListener("submit", async (e) => {
   }
 });
 
+function addError(text) { addBubble(text, "err"); }
+
 // Leave party
 if (leaveBtn) {
   leaveBtn.addEventListener("click", () => {
@@ -272,7 +295,7 @@ if (leaveBtn) {
   });
 }
 
-// Translation (cheap mini path)
+// ================== 4) Translation (cheap mini path) ==================
 async function translateSelection() {
   if (inFlight) return;
   let sel = (window.getSelection?.().toString() || "").trim();
@@ -339,5 +362,5 @@ document.addEventListener("keydown", (e) => {
 });
 window.translateSelection = translateSelection;
 
-// Focus the input on load
-document.getElementById('text')?.focus();
+// Focus the input on load (don’t scroll the page)
+try { document.getElementById('text')?.focus({ preventScroll: true }); } catch { document.getElementById('text')?.focus(); }
