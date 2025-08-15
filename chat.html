@@ -2,327 +2,64 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <!-- Use the visual viewport when the keyboard shows -->
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
   <title>Chat — Spanish Tutor (Party Mode)</title>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 
   <style>
     :root{
-      --head-h:56px;    /* measured in JS */
-      --comp-h:64px;    /* measured in JS */
+      --head-h:56px;                 /* measured in JS */
+      --comp-h:64px;                 /* measured in JS */
       --safe-left: env(safe-area-inset-left);
       --safe-right: env(safe-area-inset-right);
       --safe-bottom: env(safe-area-inset-bottom);
     }
 
-    *{ box-sizing:border-box; }
-
-    /* 🔒 Hard lock the page itself so it never scrolls/bounces */
+    /* 1) Freeze the page itself (no parent scroll/rubber-band) */
     html, body{
-      height:100%;
-      margin:0;
-      position: fixed;   /* key: freezes the root */
-      inset: 0;          /* top/right/bottom/left: 0 */
-      width:100%;
-      overflow: hidden;  /* no scroll chain past our chat list */
-      overscroll-behavior: none;
-      -webkit-overflow-scrolling: auto;
+      position: fixed; inset: 0; margin: 0; width: 100%; height: 100%;
+      overflow: hidden; overscroll-behavior: none; -webkit-overflow-scrolling: auto;
+      touch-action: none;
+      background:#0b0b0c; color:#fff; font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      padding-left: var(--safe-left); padding-right: var(--safe-right);
     }
 
-    body{
-      background:#0b0b0c; color:#fff;
-      font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      padding-left: var(--safe-left);
-      padding-right: var(--safe-right);
-    }
-
-    /* App wrapper uses dynamic viewport height so it matches keyboard changes */
-    .app{
-      position: relative;
-      width:100%;
-      height: 100svh;
-      height: 100dvh;
-      height: calc(var(--vh, 0) * 1px); /* exact px via JS */
-    }
-
-    /* ===== Fixed rails ===== */
+    /* 2) Fixed rails */
     header.app__header{
-      position: fixed; inset: 0 0 auto 0;
-      height: var(--head-h);
+      position: fixed; inset: 0 0 auto 0; height: var(--head-h);
       display:flex; align-items:center; justify-content:space-between;
-      padding:12px 16px;
-      border-bottom:1px solid #2a2a2a;
-      background:#0b0b0c; z-index:50;
+      padding:12px 16px; background:#0b0b0c; border-bottom:1px solid #2a2a2a; z-index:50;
     }
     header .left{ display:flex; align-items:center; gap:10px; }
-    header .pill{
-      text-decoration:none; padding:6px 10px; border:1px solid #3a3a3a;
-      border-radius:999px; font-size:.9rem; color:#fff; background:#151517;
-    }
+    header .pill{ text-decoration:none; padding:6px 10px; border:1px solid #3a3a3a; border-radius:999px; font-size:.9rem; color:#fff; background:#151517; }
     .status{ margin-left:8px; opacity:.7; font-size:.9rem; }
 
-    /* Composer fixed to bottom */
+    /* 3) Composer fixed to bottom */
     #composer{
-      position: fixed; inset: auto 0 calc(var(--safe-bottom)) 0;
-      min-height: var(--comp-h);
-      display:flex; gap:8px; padding:12px;
-      border-top:1px solid #2a2a2a; background:#0f0f12; z-index:50;
+      position: fixed; inset: auto 0 calc(var(--safe-bottom)) 0; min-height: var(--comp-h);
+      display:flex; gap:8px; padding:12px; background:#0f0f12; border-top:1px solid #2a2a2a; z-index:50;
     }
     #composer input[type="text"]{
-      flex:1 1 auto; min-width:0;
-      padding:10px 12px; border-radius:10px; border:1px solid #3a3a3a;
+      flex:1 1 auto; min-width:0; padding:10px 12px; border-radius:10px; border:1px solid #3a3a3a;
       background:#151517; color:#fff; font-size:16px; /* avoid iOS zoom */
     }
-    #composer .btn{
-      padding:10px 14px; border-radius:10px; border:1px solid #3a3a3a;
-      background:#3b82f6; color:#fff; cursor:pointer; font:inherit;
-    }
+    #composer .btn{ padding:10px 14px; border-radius:10px; border:1px solid #3a3a3a; background:#3b82f6; color:#fff; cursor:pointer; font:inherit; }
     #composer .pill{ border-color:#3a3a3a; background:#151517; color:#fff; font-size:.9rem; padding:6px 10px; }
 
-    /* ===== The ONLY scrollable thing =====
-       We pin it directly to the viewport (fixed) so there is no middle container
-       that can accidentally become a scroll chain source. */
+    /* 4) The ONLY scrollable area (no intermediate wrappers) */
     #chatScroll{
-      position: fixed;
-      top: var(--head-h);
-      bottom: calc(var(--comp-h) + var(--safe-bottom));
-      left: 0; right: 0;
+      position: fixed; left: 0; right: 0;
+      top: var(--head-h); bottom: var(--comp-h);
       overflow-y: auto; -webkit-overflow-scrolling: touch;
-      padding: 16px;           /* outer padding like your .container */
-      background:#0e0e11;
+      overscroll-behavior-y: contain; touch-action: pan-y;  /* allow vertical pan here only */
+      padding: 16px; background:#0e0e11; z-index: 1;
       word-break: break-word; overflow-wrap: anywhere;
-      overscroll-behavior-y: contain;
-      touch-action: pan-y;     /* vertical panning allowed ONLY here */
-      z-index: 1;
     }
 
-    /* Optional inner width constraint that mimics your card/container look */
+    /* Optional inner shell for your card look */
     .chat-shell{
-      max-width: 960px; margin: 0 auto;
+      max-width: 960px; margin: 0 auto; min-height: 100%;
       border: 1px solid #2a2a2a; border-radius: 12px; overflow: clip;
-      background:#0f0f12; display:flex; flex-direction:column; min-height:100%;
+      background:#0f0f12; display:flex; flex-direction:column;
     }
-    .chat-head{ padding:12px 14px; border-bottom:1px solid #2a2a2a; font-weight:800; }
-    .chat-body{ padding:12px; }
-    footer.app-foot{ opacity:.7; padding:12px 16px 20px; }
-
-    .msg{ margin:8px 0; max-width:75%; padding:10px 12px; border-radius:12px; line-height:1.35; white-space:pre-wrap; }
-    .msg.me{ margin-left:auto; background:#1f2937; color:#fff; }
-    .msg.you{ background:#111827; color:#e5e7eb; border:1px solid #2a2a2a; }
-    .msg.err{ background:#3d0f0f; border:1px solid #6b1f1f; color:#fff; }
-    .sys{ color:#a1a1aa; font-size:.9rem; padding:6px 0; }
-
-    /* Translation popup sits above composer */
-    .translate-pop{
-      position: fixed; left:12px; right:12px;
-      bottom: calc(var(--comp-h) + var(--safe-bottom) + 8px);
-      z-index:60; max-width:720px; margin:0 auto;
-      background:#151517; border:1px solid rgba(255,255,255,.12);
-      border-radius:12px; padding:12px;
-      box-shadow:0 10px 30px rgba(0,0,0,.4);
-      transform:translateY(16px); opacity:0; pointer-events:none;
-      transition: transform .2s ease, opacity .2s ease;
-    }
-    .translate-pop.is-open{ transform:translateY(0); opacity:1; pointer-events:auto; }
-
-    /* Limit banner pinned above composer */
-    #limitBanner{
-      position: fixed; left:12px; right:12px;
-      bottom: calc(var(--comp-h) + var(--safe-bottom) + 8px);
-      z-index:60; max-width:720px; margin:0 auto;
-      background:#3b1d1d; color:#ffd6d6; border:1px solid #6b2b2b;
-      padding:10px 12px; border-radius:10px; display:none;
-    }
-
-    /* ✅ Tiny debug HUD (top-right) so you can see if anything other than
-       #chatScroll is moving. Remove if you don’t want it. */
-    #hud{
-      position: fixed; top:6px; right:6px; z-index:9999;
-      font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
-      background: rgba(0,0,0,.6); padding:6px 8px; border-radius:8px;
-      border:1px solid rgba(255,255,255,.15); color:#cbd5e1; pointer-events:none;
-    }
-  </style>
-
-  <script>
-    // -- Measure header & composer heights so the scroller gap is exact
-    (function rails(){
-      const root = document.documentElement;
-      const head = () => document.querySelector('header.app__header');
-      const comp = () => document.getElementById('composer');
-      const setVars = () => {
-        const hh = head()?.getBoundingClientRect().height || 56;
-        const ch = comp()?.getBoundingClientRect().height || 64;
-        root.style.setProperty('--head-h', hh + 'px');
-        root.style.setProperty('--comp-h', ch + 'px');
-      };
-      const ro = new ResizeObserver(setVars);
-      const ready = () => { setVars(); head() && ro.observe(head()); comp() && ro.observe(comp()); };
-      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready, {once:true}); else ready();
-      if (window.visualViewport){ visualViewport.addEventListener('resize', setVars); visualViewport.addEventListener('scroll', setVars); }
-      window.addEventListener('orientationchange', setVars);
-      window.addEventListener('resize', setVars);
-    })();
-
-    // -- Dynamic viewport pixel height (--vh) so keyboard resize is accurate
-    (function dynamicVh(){
-      const root = document.documentElement;
-      const set = () => {
-        const h = (window.visualViewport ? visualViewport.height : window.innerHeight);
-        root.style.setProperty('--vh', String(h));
-      };
-      set();
-      if (window.visualViewport){
-        visualViewport.addEventListener('resize', set);
-        visualViewport.addEventListener('scroll', set);
-      } else {
-        window.addEventListener('resize', set);
-      }
-    })();
-
-    // -- Global touch guards:
-    //    1) Prevent page panning anywhere outside #chatScroll
-    //    2) De-bounce rubber-band at the edges of #chatScroll
-    (function scrollGuards(){
-      const scroller = () => document.getElementById('chatScroll');
-
-      // Block pinch-zoom scroll bounce (mostly iOS Safari)
-      window.addEventListener('gesturestart', e => e.preventDefault(), {passive:false});
-
-      // Prevent vertical pan if it's not inside our scroller
-      document.addEventListener('touchmove', (e) => {
-        const s = scroller();
-        if (!s) return;
-        if (!s.contains(e.target)) e.preventDefault();
-      }, {passive:false});
-
-      // Kill rubber-band INSIDE the scroller
-      const bind = () => {
-        const s = scroller(); if (!s) return;
-        s.addEventListener('touchstart', () => {
-          if (s.scrollTop <= 0) s.scrollTop = 1;
-          const atBottom = s.scrollTop + s.clientHeight >= s.scrollHeight;
-          if (atBottom) s.scrollTop = s.scrollTop - 1;
-        }, {passive:true});
-
-        s.addEventListener('touchmove', (ev) => {
-          if (s.scrollHeight <= s.clientHeight) ev.preventDefault();
-        }, {passive:false});
-      };
-      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, {once:true}); else bind();
-    })();
-
-    // -- Auto-scroll helper (iMessage-style)
-    (function autoScroll(){
-      const s = document.getElementById('chatScroll');
-      if (!s) return;
-
-      window.scrollChatToBottom = (smooth=true) => {
-        const behavior = smooth ? 'smooth' : 'auto';
-        s.scrollTo({ top: s.scrollHeight, behavior });
-      };
-
-      const nearBottom = () => (s.scrollHeight - s.scrollTop - s.clientHeight) < 120;
-
-      const mo = new MutationObserver((muts) => {
-        const added = muts.some(m => m.addedNodes && m.addedNodes.length);
-        if (added && nearBottom()) requestAnimationFrame(() => window.scrollChatToBottom(true));
-      });
-      mo.observe(s, { childList:true, subtree:true });
-
-      s.addEventListener('load', (e) => {
-        if (e.target && e.target.tagName === 'IMG' && nearBottom()) {
-          requestAnimationFrame(() => window.scrollChatToBottom(false));
-        }
-      }, true);
-
-      requestAnimationFrame(() => window.scrollChatToBottom(false));
-    })();
-
-    // -- Tiny debug HUD so you can see where scroll is happening
-    (function hud(){
-      const el = document.createElement('div');
-      el.id = 'hud';
-      document.addEventListener('DOMContentLoaded', () => document.body.appendChild(el), {once:true});
-
-      const s = () => document.getElementById('chatScroll');
-      const tick = () => {
-        const sc = s();
-        const y = sc ? sc.scrollTop : 0;
-        el.textContent = `scrollTarget: ${document.scrollingElement === document.body ? 'body' : '—'} | chatScrollTop: ${y}`;
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    })();
-
-    // Translation popup helpers (unchanged)
-    window.showTranslation = function (html) {
-      const el = document.getElementById('translate-pop');
-      if (!el) return;
-      el.innerHTML = html;
-      el.hidden = false;
-      void el.offsetWidth;
-      el.classList.add('is-open');
-    };
-    window.hideTranslation = function () {
-      const el = document.getElementById('translate-pop');
-      if (!el) return;
-      el.classList.remove('is-open');
-      setTimeout(() => { el.hidden = true; }, 200);
-    };
-  </script>
-</head>
-
-<body>
-  <div class="app">
-    <!-- Fixed top header -->
-    <header class="app__header">
-      <div class="left">
-        <a class="pill" href="index.html" aria-label="Home">Home</a>
-        <strong>Party Chat</strong>
-        <span id="userBadge" class="status"></span>
-      </div>
-      <div class="right">
-        <button id="leaveBtn" class="pill" type="button">Leave party</button>
-      </div>
-    </header>
-
-    <!-- Fixed bottom composer -->
-    <form id="composer" class="chat-input" autocomplete="off">
-      <input id="text" type="text" placeholder="Type a message…" />
-      <button id="send" class="btn" type="submit">Send</button>
-      <button class="pill" type="button" onclick="translateSelection()">Translate selection</button>
-    </form>
-
-    <!-- The ONLY scrollable area (fixed to fill between header & composer) -->
-    <div id="chatScroll" aria-live="polite">
-      <div class="chat-shell">
-        <div class="chat-head">
-          Conversation
-          <span id="connStatus" class="status">checking session…</span>
-        </div>
-
-        <div class="chat-body" id="chatBody">
-          <div class="sys" id="bootMsg">Loading…</div>
-          <!-- messages get appended here by chat.js -->
-        </div>
-
-        <footer class="app-foot">© Spanish Tutor — party mode</footer>
-      </div>
-    </div>
-  </div>
-
-  <!-- Translation popup -->
-  <div id="translate-pop" class="translate-pop" hidden></div>
-
-  <!-- Limit banner -->
-  <div id="limitBanner">
-    <strong>Rate/usage limit:</strong> You’ve hit today’s limit. Try again later.
-  </div>
-
-  <!-- Your client logic -->
-  <script type="module" src="chat.js"></script>
-</body>
-</html>
