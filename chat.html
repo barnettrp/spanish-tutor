@@ -8,174 +8,154 @@
   <link rel="stylesheet" href="styles.css">
 
   <style>
-    /* --- Global sizing & safety --- */
-    :root { --vh: 1vh; /* set by JS */ --composer-h: 64px; }  /* composer measured by JS */
+  :root {
+    --vh: 1vh;          /* fallback 1vh unit */
+    --vhpx: 100vh;      /* visual viewport height in px */
+    --composer-h: 64px; /* composer height in px */
+  }
 
-    * { box-sizing: border-box; }
-    html, body {
-      height: 100%;
-      margin: 0;
-      overflow: hidden;           /* no page scroll */
-      overscroll-behavior: none;  /* stop iOS rubber-band */
-      background: #0b0b0c;
-      color: #fff;
-      font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    }
-    body { overflow-x: hidden; }  /* kill horizontal scroll just in case */
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: #0b0b0c;
+    color: #fff;
+    font-family: Nunito, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+  body { overflow-x: hidden; }
 
-    /* --- App frame fills the visible screen --- */
-    .app {
-      min-height: 100dvh;                        /* modern browsers */
-      min-height: calc(var(--vh, 1vh) * 100);    /* older iOS fallback */
-      display: flex;
-      flex-direction: column;
-      padding-left: env(safe-area-inset-left);
-      padding-right: env(safe-area-inset-right);
-      background: #0b0b0c;
-      color: #fff;
-      width: 100%;
-    }
+  .app {
+    height: var(--vhpx);
+    min-height: calc(var(--vh, 1vh) * 100);
+    display: flex;
+    flex-direction: column;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    background: #0b0b0c;
+    color: #fff;
+    width: 100%;
+  }
 
-    /* --- Header (fixed at top of the flex column) --- */
-    header.app__header {
-      flex: 0 0 auto;
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 16px;
-      border-bottom: 1px solid #2a2a2a;
-      background: #0b0b0c;
-    }
-    header .left { display:flex; align-items:center; gap:10px; }
-    header .pill {
-      text-decoration:none; padding:6px 10px; border:1px solid #3a3a3a;
-      border-radius:999px; font-size:.9rem; color:#fff; background:#151517;
-    }
-    .status { margin-left:8px; opacity:.7; font-size:.9rem; }
+  header.app__header {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #2a2a2a;
+    background: #0b0b0c;
+  }
+  header .left { display:flex; align-items:center; gap:10px; }
+  header .pill {
+    text-decoration:none; padding:6px 10px; border:1px solid #3a3a3a;
+    border-radius:999px; font-size:.9rem; color:#fff; background:#151517;
+  }
+  .status { margin-left:8px; opacity:.7; font-size:.9rem; }
 
-    /* --- Middle content takes remaining height; page itself never scrolls --- */
-    main.app__content {
-      flex: 1 1 auto;
-      min-height: 0;            /* critical so children can scroll */
-      overflow: hidden;         /* block page-level scrolling */
-      padding-bottom: env(safe-area-inset-bottom);
-      background: #0b0b0c;
-      width: 100%;
-    }
+  main.app__content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: #0b0b0c;
+    width: 100%;
+  }
 
-    /* --- Your chat card layout lives inside the content area --- */
-    .container { max-width: 960px; width: 100%; margin: 0 auto; padding: 16px; }
-    .card {
-      border: 1px solid #2a2a2a; border-radius: 12px; overflow: hidden;
-      display: flex; flex-direction: column; background: #0f0f12; min-height: 40vh;
-    }
-    .chat-head { padding: 12px 14px; border-bottom: 1px solid #2a2a2a; font-weight: 800; }
+  .container { max-width: 960px; width: 100%; margin: 0 auto; padding: 16px; }
+  .card {
+    border: 1px solid #2a2a2a; border-radius: 12px; overflow: hidden;
+    display: flex; flex-direction: column; background: #0f0f12; min-height: 40vh;
+  }
+  .chat-head { padding: 12px 14px; border-bottom: 1px solid #2a2a2a; font-weight: 800; }
 
-    /* --- The ONLY scrollable region --- */
-    .chat-body {
-      padding: 12px;
-      flex: 1 1 auto; min-height: 0;
-      overflow-y: auto; -webkit-overflow-scrolling: touch;
-      background: #0e0e11;
-      word-break: break-word; overflow-wrap: anywhere; /* prevent sideways scroll from long strings */
-    }
+  .chat-body {
+    padding: 12px;
+    flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: #0e0e11;
+    word-break: break-word; overflow-wrap: anywhere;
+  }
 
-    /* Messages */
-    .msg {
-      margin:8px 0; max-width:75%; padding:10px 12px; border-radius:12px;
-      line-height:1.35; white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere;
-    }
-    .msg.me { margin-left:auto; background:#1f2937; color:#fff; }
-    .msg.you { background:#111827; color:#e5e7eb; border:1px solid #2a2a2a; }
-    .msg.err { background:#3d0f0f; border:1px solid #6b1f1f; color:#fff; }
-    .sys { color:#a1a1aa; font-size:.9rem; padding:6px 0; }
+  .msg { margin:8px 0; max-width:75%; padding:10px 12px; border-radius:12px; line-height:1.35; white-space:pre-wrap; }
+  .msg.me { margin-left:auto; background:#1f2937; color:#fff; }
+  .msg.you { background:#111827; color:#e5e7eb; border:1px solid #2a2a2a; }
+  .msg.err { background:#3d0f0f; border:1px solid #6b1f1f; color:#fff; }
+  .sys { color:#a1a1aa; font-size:.9rem; padding:6px 0; }
 
-    /* Composer pinned at bottom of the card (still inside app frame) */
-    .chat-input {
-      display:flex; gap:8px; padding:12px;
-      border-top:1px solid #2a2a2a; background:#0f0f12;
-    }
-    .chat-input input[type="text"] {
-      flex:1 1 auto; min-width:0;
-      padding:10px 12px; border-radius:10px; border:1px solid #3a3a3a;
-      background:#151517; color:#fff; font-size:16px; /* prevent iOS zoom */
-    }
-    .btn {
-      padding:10px 14px; border-radius:10px; border:1px solid #3a3a3a;
-      background:#3b82f6; color:#fff; cursor:pointer; font:inherit;
-    }
-    .chat-input .pill { /* translate button look inside composer */
-      border-color:#3a3a3a; background:#151517; color:#fff; font-size:.9rem; padding:6px 10px;
-    }
+  .chat-input {
+    display:flex; gap:8px; padding:12px;
+    border-top:1px solid #2a2a2a; background:#0f0f12;
+  }
+  .chat-input input[type="text"] {
+    flex:1 1 auto; min-width:0;
+    padding:10px 12px; border-radius:10px; border:1px solid #3a3a3a;
+    background:#151517; color:#fff;
+  }
+  .btn {
+    padding:10px 14px; border-radius:10px; border:1px solid #3a3a3a;
+    background:#3b82f6; color:#fff; cursor:pointer; font:inherit;
+  }
+  .chat-input .pill {
+    border-color:#3a3a3a; background:#151517; color:#fff; font-size:.9rem; padding:6px 10px;
+  }
 
-    /* Footer stays inside content; does NOT fix to screen */
-    footer.container { opacity:.7; padding:12px 16px 20px; }
+  footer.container { opacity:.7; padding:12px 16px 20px; }
 
-    /* Bottom translation popup pinned above the composer, even when it grows */
-    .translate-pop {
-      position: fixed;
-      left: 12px; right: 12px;
-      bottom: calc(var(--composer-h, 64px) + env(safe-area-inset-bottom));
-      z-index: 9999; max-width: 720px; margin: 0 auto;
-      background: #151517; border: 1px solid rgba(255,255,255,.12);
-      border-radius: 12px; padding: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,.4);
-      transform: translateY(16px); opacity: 0; pointer-events: none;
-      transition: transform .2s ease, opacity .2s ease;
-    }
-    .translate-pop.is-open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+  .translate-pop {
+    position: fixed;
+    left: 12px; right: 12px;
+    bottom: calc(var(--composer-h, 64px) + env(safe-area-inset-bottom));
+    z-index: 9999; max-width: 720px; margin: 0 auto;
+    background: #151517; border: 1px solid rgba(255,255,255,.12);
+    border-radius: 12px; padding: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.4);
+    transform: translateY(16px); opacity: 0; pointer-events: none;
+    transition: transform .2s ease, opacity .2s ease;
+  }
+  .translate-pop.is-open { transform: translateY(0); opacity: 1; pointer-events: auto; }
   </style>
 
   <script>
-    /* Dynamic --vh so the app resizes when the iOS keyboard opens */
-    (function setVH() {
-      const apply = () => document.documentElement.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
-      apply();
-      window.addEventListener('resize', apply);
-      window.addEventListener('orientationchange', apply);
-    })();
+  // Viewport + keyboard-safe height
+  (function setupViewportVars() {
+    const root = document.documentElement;
+    function applyHeights() {
+      const vv = window.visualViewport;
+      const vhPx = vv ? vv.height : window.innerHeight;
+      root.style.setProperty('--vhpx', vhPx + 'px');
+      root.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px');
+    }
+    applyHeights();
+    if (window.visualViewport) {
+      visualViewport.addEventListener('resize', applyHeights);
+      visualViewport.addEventListener('scroll', applyHeights);
+    }
+    window.addEventListener('resize', applyHeights);
+    window.addEventListener('orientationchange', applyHeights);
+  })();
 
-    /* Track composer height so the popup stays docked above it (safe for older browsers) */
-    (function trackComposerHeight(){
-      const set = () => {
-        const c = document.getElementById('composer');
-        const h = c ? c.offsetHeight : 64;
-        document.documentElement.style.setProperty('--composer-h', h + 'px');
-      };
-      const ready = () => {
-        set();
-        const c = document.getElementById('composer');
-        if (c && window.ResizeObserver) new ResizeObserver(set).observe(c);
-      };
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', ready, { once:true });
-      } else {
-        ready();
-      }
-      window.addEventListener('resize', set);
-      window.addEventListener('orientationchange', set);
-    })();
-
-    /* --- Translation popup helpers (inline & self-contained) --- */
-    window.showTranslation = function (html) {
-      const el = document.getElementById('translate-pop');
-      if (!el) return;
-      el.innerHTML = html;
-      el.hidden = false;
-      // force reflow so transition plays even if toggled quickly
-      void el.offsetWidth;
-      el.classList.add('is-open');
+  // Track composer height
+  (function trackComposerHeight(){
+    const root = document.documentElement;
+    const set = () => {
+      const c = document.getElementById('composer');
+      root.style.setProperty('--composer-h', (c ? c.offsetHeight : 64) + 'px');
     };
-    window.hideTranslation = function () {
-      const el = document.getElementById('translate-pop');
-      if (!el) return;
-      el.classList.remove('is-open');
-      setTimeout(() => { el.hidden = true; }, 200);
+    const ready = () => {
+      set();
+      const c = document.getElementById('composer');
+      if (c && window.ResizeObserver) new ResizeObserver(set).observe(c);
     };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready, { once:true });
+    else ready();
+    window.addEventListener('resize', set);
+    window.addEventListener('orientationchange', set);
+  })();
   </script>
 </head>
 
 <body>
   <div class="app">
-    <!-- Top header -->
     <header class="app__header">
       <div class="left">
         <a class="pill" href="index.html" aria-label="Home">Home</a>
@@ -187,7 +167,6 @@
       </div>
     </header>
 
-    <!-- Middle content that fills the screen; only the inner chat scrolls -->
     <main class="app__content">
       <div class="container">
         <div class="card">
@@ -196,12 +175,10 @@
             <span id="connStatus" class="status">checking session…</span>
           </div>
 
-          <!-- This is the ONLY scrollable region -->
           <div id="chatScroll" class="chat-body" aria-live="polite">
             <div class="sys" id="bootMsg">Loading…</div>
           </div>
 
-          <!-- Composer pinned to the bottom of the card -->
           <form id="composer" class="chat-input" autocomplete="off">
             <input id="text" type="text" placeholder="Type a message…" />
             <button id="send" class="btn" type="submit">Send</button>
@@ -214,10 +191,19 @@
     </main>
   </div>
 
-  <!-- Translation popup lives outside the flow, near the bottom of the screen -->
+  <!-- Translation popup -->
   <div id="translate-pop" class="translate-pop" hidden></div>
 
-  <!-- Client logic -->
+  <!-- Limit banner -->
+  <div id="limitBanner" style="
+    position: fixed; left: 12px; right: 12px;
+    bottom: calc(var(--composer-h, 64px) + env(safe-area-inset-bottom) + 8px);
+    z-index: 10000; max-width: 720px; margin: 0 auto;
+    background: #3b1d1d; color: #ffd6d6; border: 1px solid #6b2b2b;
+    padding: 10px 12px; border-radius: 10px; display: none;">
+    <strong>Rate/usage limit:</strong> You’ve hit today’s limit. Try again later.
+  </div>
+
   <script type="module" src="chat.js"></script>
 </body>
 </html>
