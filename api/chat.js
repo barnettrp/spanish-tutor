@@ -1,50 +1,106 @@
-// chat.js — Client-side logic (drop-in)
+// chat.js — hard lock against iOS keyboard scroll, plus your existing chat features
 
-// ---------------------- Viewport & keyboard-safe height ----------------------
-(function setupViewportVars() {
+// ================== 1) Viewport & layout hard-fix ==================
+(function viewportAndLayout() {
   const root = document.documentElement;
+  const chatScroll = () => document.getElementById('chatScroll');
+  const headerEl   = () => document.querySelector('.app__header');
+  const composerEl = () => document.getElementById('composer');
 
-  function applyHeights() {
+  // Compute exact chat list height so nothing else needs to scroll
+  function applyLayout() {
     const vv = window.visualViewport;
-    const vhPx = vv ? vv.height : window.innerHeight;       // exact visible height in px
-    root.style.setProperty('--vhpx', vhPx + 'px');           // primary, used by .app { height: var(--vhpx) }
-    root.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px'); // fallback
+    const vh = vv ? vv.height : window.innerHeight;
+
+    // expose vars for CSS (some themes use them)
+    root.style.setProperty('--vhpx', vh + 'px');
+    root.style.setProperty('--vh', (window.innerHeight * 0.01) + 'px');
+
+    const headerH   = (headerEl()?.getBoundingClientRect().height || 0);
+    const composerH = (composerEl()?.getBoundingClientRect().height || 0);
+
+    // padding from your .container/.card (give ourselves a small buffer)
+    const gutters = 16 + 16; // rough vertical padding inside the card/container
+
+    const usable = Math.max(0, vh - headerH - composerH - gutters);
+    const scroll = chatScroll();
+    if (scroll) {
+      scroll.style.height = usable + 'px';
+      scroll.style.maxHeight = usable + 'px';
+      scroll.style.overflowY = 'auto';
+      scroll.style.webkitOverflowScrolling = 'touch';
+    }
+
+    // keep page pinned at top so Safari can't bounce the document
+    window.scrollTo(0, 0);
+    document.body.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
   }
 
-  applyHeights();
+  // Lock the page when input is focused (iOS likes to move the root)
+  function lockPage() {
+    // store current scroll just in case (should be 0)
+    const y = window.scrollY || 0;
+    document.body.dataset.lockY = String(y);
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${y}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+  }
+  function unlockPage() {
+    const y = parseInt(document.body.dataset.lockY || '0', 10) || 0;
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    window.scrollTo(0, y);
+  }
+
+  // Prevent body from scrolling via touch; allow only the chat list to scroll
+  function blockBodyTouch(e) {
+    const target = e.target;
+    const scroll = chatScroll();
+    // Allow touches that start inside the chat list
+    if (scroll && (scroll === target || scroll.contains(target))) return;
+    e.preventDefault();
+  }
+
+  // Wire it up
+  const apply = () => applyLayout();
+  apply();
   if (window.visualViewport) {
-    visualViewport.addEventListener('resize', applyHeights);
-    visualViewport.addEventListener('scroll', applyHeights); // iOS fires on keyboard open/close
+    visualViewport.addEventListener('resize', apply);
+    visualViewport.addEventListener('scroll', apply);
   }
-  window.addEventListener('resize', applyHeights);
-  window.addEventListener('orientationchange', applyHeights);
+  window.addEventListener('resize', apply);
+  window.addEventListener('orientationchange', apply);
+
+  // Focus/blur lock for the composer input
+  function composerFocusLock() {
+    const input = document.getElementById('text');
+    if (!input) return;
+    input.addEventListener('focus', () => { lockPage(); applyLayout(); setTimeout(applyLayout, 50); });
+    input.addEventListener('blur',  () => { unlockPage(); setTimeout(applyLayout, 50); });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { composerFocusLock(); applyLayout(); }, { once: true });
+  } else {
+    composerFocusLock(); applyLayout();
+  }
+
+  // Block body touch scroll; allow chat list to scroll
+  window.addEventListener('touchmove', blockBodyTouch, { passive: false });
 })();
 
-// ---------------------- Track composer height for popup docking ----------------------
-(function trackComposerHeight(){
-  const root = document.documentElement;
-  const set = () => {
-    const c = document.getElementById('composer');
-    root.style.setProperty('--composer-h', (c ? c.offsetHeight : 64) + 'px');
-  };
-  const ready = () => {
-    set();
-    const c = document.getElementById('composer');
-    if (c && window.ResizeObserver) new ResizeObserver(set).observe(c);
-  };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready, { once:true });
-  else ready();
-  window.addEventListener('resize', set);
-  window.addEventListener('orientationchange', set);
-})();
-
-// ---------------------- Translation popup helpers (inline safety) ----------------------
+// ================== 2) Popup helpers ==================
 window.showTranslation = window.showTranslation || function (html) {
   const el = document.getElementById('translate-pop');
   if (!el) return;
   el.innerHTML = html;
   el.hidden = false;
-  void el.offsetWidth; // reflow so transition plays
+  void el.offsetWidth; // reflow
   el.classList.add('is-open');
 };
 window.hideTranslation = window.hideTranslation || function () {
@@ -54,7 +110,7 @@ window.hideTranslation = window.hideTranslation || function () {
   setTimeout(() => { el.hidden = true; }, 200);
 };
 
-// ---------------------- Small helpers ----------------------
+// ================== 3) Chat app logic (unchanged behavior) ==================
 const $ = (id) => document.getElementById(id);
 const HISTORY_KEY = "party_history";
 const SYSTEM_PROMPT =
@@ -80,7 +136,7 @@ function escapeHtml(s) {
     .replaceAll('"',"&quot;").replaceAll("'","&#039;");
 }
 
-// ---------------------- Element refs ----------------------
+// Elements
 const connStatus  = $("connStatus");
 const userBadge   = $("userBadge");
 const chatScroll  = $("chatScroll");
@@ -91,15 +147,13 @@ const leaveBtn    = $("leaveBtn");
 const sendBtn     = $("send");
 const limitBanner = $("limitBanner");
 
-// ---------------------- Auth header badges (non-blocking) ----------------------
+// Auth/status (same as before)
 const token = localStorage.getItem("party_token");
 const name  = localStorage.getItem("party_name") || "Guest";
 const code  = localStorage.getItem("party_code") || "";
 if (userBadge) userBadge.textContent = `${name}${code ? " · " + code : ""}`;
 function redirectToJoin() { location.replace("join.html"); }
 if (!token) { redirectToJoin(); throw new Error("No party_token present"); }
-
-// Optional: validate session if /api/me exists
 (async () => {
   if (!connStatus) return;
   connStatus.textContent = "validating…";
@@ -108,18 +162,14 @@ if (!token) { redirectToJoin(); throw new Error("No party_token present"); }
     if (res.status === 404) { connStatus.textContent = "connected"; return; }
     if (!res.ok) { connStatus.textContent = "unauthorized"; redirectToJoin(); return; }
     connStatus.textContent = "connected";
-  } catch {
-    connStatus.textContent = "offline (still usable)";
-  }
+  } catch { connStatus.textContent = "offline (still usable)"; }
 })();
 
-// ---------------------- History & render ----------------------
+// History & render
 let history = loadHistory();
-
 function addBubble(text, who = "you", meta = "") {
   const div = document.createElement("div");
   div.className = `msg ${who}`;
-  // Use a first child text node so we can append a meta line below
   div.appendChild(document.createTextNode(text));
   if (meta) {
     const small = document.createElement("div");
@@ -140,30 +190,24 @@ function addMsg(text, who = "you", skipSave = false, meta = "") {
   }
 }
 function addError(text) { addBubble(text, "err"); }
-
-// Rehydrate (skip system)
 for (const m of history) {
   if (m.role === "user") addMsg(m.content, "me", true);
   if (m.role === "assistant") addMsg(m.content, "you", true);
 }
 if (bootMsg) { bootMsg.textContent = `Welcome, ${name}!`; setTimeout(() => bootMsg.remove(), 800); }
 
-// ---------------------- Limit banner helpers ----------------------
+// Limit banner
 function showLimitBanner(msg) {
   if (!limitBanner) return;
   limitBanner.style.display = "block";
   limitBanner.innerHTML = `<strong>Rate/usage limit:</strong> ${msg || "You’ve hit a limit. Try again later."}`;
 }
-function hideLimitBanner() {
-  if (!limitBanner) return;
-  limitBanner.style.display = "none";
-}
+function hideLimitBanner() { if (limitBanner) limitBanner.style.display = "none"; }
 
-// ---------------------- Network call guards ----------------------
+// Send flow
 let inFlight = false;
 let cooldown = false;
 
-// ---------------------- Send flow ----------------------
 composer.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (inFlight || cooldown) return;
@@ -173,10 +217,7 @@ composer.addEventListener("submit", async (e) => {
   if (!msg) return;
 
   addMsg(msg, "me");
-  if (inputEl) {
-    inputEl.value = "";
-    inputEl.focus();
-  }
+  if (inputEl) { inputEl.value = ""; inputEl.focus(); }
 
   if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = "Sending…"; }
   inFlight = true;
@@ -219,7 +260,7 @@ composer.addEventListener("submit", async (e) => {
   }
 });
 
-// ---------------------- Leave flow ----------------------
+// Leave party
 if (leaveBtn) {
   leaveBtn.addEventListener("click", () => {
     try {
@@ -227,20 +268,16 @@ if (leaveBtn) {
       localStorage.removeItem("party_name");
       localStorage.removeItem("party_code");
       sessionStorage.removeItem(HISTORY_KEY);
-    } finally {
-      redirectToJoin();
-    }
+    } finally { redirectToJoin(); }
   });
 }
 
-// ---------------------- Translation: Translate selection (cheaper) ----------------------
+// Translation (cheap mini path)
 async function translateSelection() {
-  if (inFlight) return; // avoid parallel calls
-
-  // Prefer selected text; fallback to last assistant msg
+  if (inFlight) return;
   let sel = (window.getSelection?.().toString() || "").trim();
   if (!sel) {
-    const msgs = Array.from(chatScroll.querySelectorAll(".msg.you"));
+    const msgs = Array.from(document.querySelectorAll("#chatScroll .msg.you"));
     sel = msgs.length ? (msgs[msgs.length - 1].firstChild?.textContent || "") : "";
   }
   if (!sel) {
@@ -258,8 +295,8 @@ async function translateSelection() {
           {
             role: "system",
             content:
-              "Translate the user's text. Detect the language. If Spanish → concise, natural English. " +
-              "If English → simple, natural Spanish (A1–A2). Return ONLY the translation, ≤ 60 words."
+              "Translate the user's text. Detect language. If Spanish → concise natural English. " +
+              "If English → simple natural Spanish (A1–A2). Return ONLY the translation, ≤ 60 words."
           },
           { role: "user", content: sel }
         ],
@@ -297,17 +334,10 @@ async function translateSelection() {
     inFlight = false;
   }
 }
-
-// Keyboard shortcut: Alt+T to translate current selection
 document.addEventListener("keydown", (e) => {
-  if (e.altKey && e.key.toLowerCase() === "t") {
-    e.preventDefault();
-    translateSelection().catch(() => {});
-  }
+  if (e.altKey && e.key.toLowerCase() === "t") { e.preventDefault(); translateSelection().catch(()=>{}); }
 });
-
-// Expose globally for the composer button
 window.translateSelection = translateSelection;
 
-// ---------------------- QoL ----------------------
-inputEl?.focus();
+// Focus the input on load
+document.getElementById('text')?.focus();
